@@ -75,12 +75,14 @@ public class CordovaCall extends CordovaPlugin {
         appName = getApplicationName(this.cordova.getActivity().getApplicationContext());
         handle = new PhoneAccountHandle(new ComponentName(this.cordova.getActivity().getApplicationContext(),MyConnectionService.class),appName);
         tm = (TelecomManager)this.cordova.getActivity().getApplicationContext().getSystemService(this.cordova.getActivity().getApplicationContext().TELECOM_SERVICE);
-        if(android.os.Build.VERSION.SDK_INT >= 26) {
-          phoneAccount = new PhoneAccount.Builder(handle, appName)
-                  .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
-                  .build();
-          tm.registerPhoneAccount(phoneAccount);
-        }
+        // Removing fixes java.lang.IllegalArgumentException: Error, cannot change a self-managed phone account
+        // We do not want SELF_MANAGED as we want to use the default phone app
+        // if(android.os.Build.VERSION.SDK_INT >= 26) {
+        //   phoneAccount = new PhoneAccount.Builder(handle, appName)
+        //           .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
+        //           .build();
+        //   tm.registerPhoneAccount(phoneAccount);
+        // }
         if(android.os.Build.VERSION.SDK_INT >= 23) {
           phoneAccount = new PhoneAccount.Builder(handle, appName)
                    .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER)
