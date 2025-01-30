@@ -273,6 +273,9 @@ public class CordovaCall extends CordovaPlugin {
         tm.addNewIncomingCall(handle, callInfo);
         permissionCounter = 0;
         this.callbackContext.success("Incoming call successful");
+
+        this.bringAppToFront();
+        this.tm.showInCallScreen(true);
     }
 
     private void sendCall() {
@@ -286,6 +289,13 @@ public class CordovaCall extends CordovaPlugin {
         tm.placeCall(uri, callInfo);
         permissionCounter = 0;
         this.callbackContext.success("Outgoing call successful");
+    }
+
+    private void bringAppToFront() {
+        Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
+        // Intent.FLAG_ACTIVITY_REORDER_TO_FRONT Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT | Intent.FLAG_FROM_BACKGROUND);
+        this.cordova.getActivity().getApplicationContext().startActivity(intent);
     }
 
     private void mute() {
