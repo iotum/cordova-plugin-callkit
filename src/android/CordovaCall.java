@@ -42,6 +42,13 @@ public class CordovaCall extends CordovaPlugin {
     private String to;
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
+    static {
+        callbackContextMap.put("answer", new ArrayList<CallbackContext>());
+        callbackContextMap.put("reject", new ArrayList<CallbackContext>());
+        callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
+        callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
+        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
+    }
     private static CordovaInterface cordovaInterface;
     private static CordovaWebView cordovaWebView;
     private static Icon icon;
