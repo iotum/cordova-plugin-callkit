@@ -481,7 +481,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action
 {
-    // [self setupAudioSession];
+    [self setupAudioSession];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = action.handle;
     callUpdate.hasVideo = action.video;
@@ -519,7 +519,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
 {
-    // [self setupAudioSession];
+    [self setupAudioSession];
     [action fulfill];
 
     // Notify Webhook that Native Call has been Answered
