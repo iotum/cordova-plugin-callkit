@@ -20,6 +20,7 @@ PKPushRegistry *_voipRegistry;
 BOOL isCancelPush = NO;
 NSString* callBackUrl;
 NSString* callId;
+NSDictionary* callData;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -480,7 +481,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action
 {
-    [self setupAudioSession];
+    // [self setupAudioSession];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = action.handle;
     callUpdate.hasVideo = action.video;
@@ -518,18 +519,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
 {
-    [self setupAudioSession];
+    // [self setupAudioSession];
     [action fulfill];
 
     // Notify Webhook that Native Call has been Answered
-    NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"pickup"]];
-    NSURLSession *session = [NSURLSession sharedSession];
-    [[session dataTaskWithURL:statusUpdateUrl
-              completionHandler:^(NSData *statusUpdateData,
-                                  NSURLResponse *statusUpdateResponse,
-                                  NSError *statusUpdateError) {
-                // handle response
-    }] resume];
+    // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"pickup"]];
+    // NSURLSession *session = [NSURLSession sharedSession];
+    // [[session dataTaskWithURL:statusUpdateUrl
+    //           completionHandler:^(NSData *statusUpdateData,
+    //                               NSURLResponse *statusUpdateResponse,
+    //                               NSError *statusUpdateError) {
+    //             // handle response
+    // }] resume];
 
     if ([callbackIds[@"answer"] count] == 0) {
         // callbackId for event not registered, add to pending to trigger on registration
@@ -553,16 +554,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
         } else {
             // Notify Webhook that Native Call has been Declined
-            if (!isCancelPush) {
-                NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"declined_callee"]];
-                NSURLSession *session = [NSURLSession sharedSession];
-                [[session dataTaskWithURL:statusUpdateUrl
-                        completionHandler:^(NSData *statusUpdateData,
-                                            NSURLResponse *statusUpdateResponse,
-                                            NSError *statusUpdateError) {
-                            // handle response
-                }] resume];
-            }
+            // if (!isCancelPush) {
+            //     NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"declined_callee"]];
+            //     NSURLSession *session = [NSURLSession sharedSession];
+            //     [[session dataTaskWithURL:statusUpdateUrl
+            //             completionHandler:^(NSData *statusUpdateData,
+            //                                 NSURLResponse *statusUpdateResponse,
+            //                                 NSError *statusUpdateError) {
+            //                 // handle response
+            //     }] resume];
+            // }
 
             if ([callbackIds[@"reject"] count] == 0) {
                 // callbackId for event not registered, add to pending to trigger on registration
@@ -580,10 +581,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
     if ([response isEqualToString:@"answer"]) {
         for (id callbackId in callbackIds[@"answer"]) {
-            CDVPluginResult* pluginResult = nil;
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"answer event called successfully"];
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+
+            // CDVPluginResult* pluginResult = nil;
+            // pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"answer event called successfully"];
+            // [pluginResult setKeepCallbackAsBool:YES];
+            // [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
     } else if ([response isEqualToString:@"reject"]) {
         for (id callbackId in callbackIds[@"reject"]) {
@@ -664,7 +669,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self sendTokenPluginResult];
 }
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion
-{
+{   
+    NSLog(@"[objC] didReceiveIncomingPush: %@", payload);
     NSDictionary *payloadDict = payload.dictionaryPayload[@"aps"];
     NSLog(@"[objC] didReceiveIncomingPushWithPayload: %@", payloadDict);
 
@@ -685,6 +691,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Store URL and Call Id so they can be used for call Answer/Reject 
     callBackUrl = [caller valueForKey:@"CallbackUrl"];
     callId = [caller valueForKey:@"ConnectionId"];
+    callData = data;
     if ([[caller valueForKey:@"CancelPush"] isEqualToString:@"true"]) {
         isCancelPush = YES;
     } else {
@@ -692,14 +699,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     if (!isCancelPush) {
         // Notify Webhook that VOIP Push Has been received and app is started
-        NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
-        NSURLSession *session = [NSURLSession sharedSession];
-        [[session dataTaskWithURL:statusUpdateUrl
-                  completionHandler:^(NSData *statusUpdateData,
-                                      NSURLResponse *statusUpdateResponse,
-                                      NSError *statusUpdateError) {
-                    // handle response
-        }] resume];
+        // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
+        // NSURLSession *session = [NSURLSession sharedSession];
+        // [[session dataTaskWithURL:statusUpdateUrl
+        //           completionHandler:^(NSData *statusUpdateData,
+        //                               NSURLResponse *statusUpdateResponse,
+        //                               NSError *statusUpdateError) {
+        //             // handle response
+        // }] resume];
     }
 
     [self receiveCall:newCommand];
