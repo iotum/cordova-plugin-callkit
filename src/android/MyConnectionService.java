@@ -43,7 +43,8 @@ public class MyConnectionService extends ConnectionService {
                 for (final CallbackContext callbackContext : callbackContexts) {
                     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                         public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, "answer event called successfully");
+                            Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
+                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
                             result.setKeepCallback(true);
                             callbackContext.sendPluginResult(result);
                         }
