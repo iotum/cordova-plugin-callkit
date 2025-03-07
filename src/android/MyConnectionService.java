@@ -17,6 +17,7 @@ import android.net.Uri;
 import java.util.ArrayList;
 import android.util.Log;
 import org.json.JSONObject;
+import org.json.JSONException;
 
 public class MyConnectionService extends ConnectionService {
 
@@ -36,7 +37,11 @@ public class MyConnectionService extends ConnectionService {
         if (bundle != null) {
             for (String key : bundle.keySet()) {
                 Object value = bundle.get(key);
-                jsonObject.put(key, value);
+                try {
+                    jsonObject.put(key, value);
+                } catch (JSONException e) {
+                    Log.e(TAG, "Failed to convert bundle to JSON", e);
+                }
             }
         }
         return jsonObject;
