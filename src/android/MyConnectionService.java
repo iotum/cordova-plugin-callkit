@@ -30,6 +30,17 @@ public class MyConnectionService extends ConnectionService {
         conn = null;
     }
 
+    private static JSONObject convertBundleToJson(Bundle bundle) {
+        JSONObject jsonObject = new JSONObject();
+        if (bundle != null) {
+            for (String key : bundle.keySet()) {
+                Object value = bundle.get(key);
+                jsonObject.put(key, value);
+            }
+        }
+        return jsonObject;
+    }
+
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         final Connection connection = new Connection() {
@@ -44,7 +55,7 @@ public class MyConnectionService extends ConnectionService {
                     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                         public void run() {
                             Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, data);
+                            PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
                             result.setKeepCallback(true);
                             callbackContext.sendPluginResult(result);
                         }
