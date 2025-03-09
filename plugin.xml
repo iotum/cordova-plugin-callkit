@@ -21,6 +21,7 @@
         <config-file parent="/*" target="AndroidManifest.xml">
             <uses-permission android:name="android.permission.CALL_PHONE"/>
             <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
+            <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
         </config-file>
 
         <config-file parent="/manifest/application" target="AndroidManifest.xml">
