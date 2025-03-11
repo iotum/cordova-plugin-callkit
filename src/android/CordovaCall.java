@@ -284,7 +284,7 @@ public class CordovaCall extends CordovaPlugin {
         this.callbackContext.success("Incoming call successful");
 
         this.bringAppToFront();
-        this.tm.showInCallScreen(true);
+        this.tm.showInCallScreen(false);
     }
 
     private void sendCall() {
