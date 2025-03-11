@@ -3,6 +3,8 @@ package com.dmarc.cordovacall;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.Context;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
 import android.telecom.Connection;
@@ -53,20 +55,42 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAnswer() {
                 this.setActive();
-                Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
-                ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("answer");
-                for (final CallbackContext callbackContext : callbackContexts) {
-                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
+                // Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
+                // // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_FROM_BACKGROUND);
+                // CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+                // ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("answer");
+                // for (final CallbackContext callbackContext : callbackContexts) {
+                //     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                //         public void run() {
+                //             Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
+                //             PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
+                //             result.setKeepCallback(true);
+                //             callbackContext.sendPluginResult(result);
+                //         }
+                //     });
+                // }
+                // TelecomManager tm = (TelecomManager) CordovaCall.getCordova().getActivity().getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+                // tm.showInCallScreen(false);
+
+                // Allow enough time for our app to open and register the answer callback
+                final Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("answer");
+                        for (final CallbackContext callbackContext : callbackContexts) {
+                            CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                                public void run() {
+                                    Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
+                                    PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
+                                    result.setKeepCallback(true);
+                                    callbackContext.sendPluginResult(result);
+                                }
+                            });
                         }
-                    });
-                }
+                    }
+                }, 1000);
             }
 
             @Override
