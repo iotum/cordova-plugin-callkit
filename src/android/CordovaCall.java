@@ -250,6 +250,10 @@ public class CordovaCall extends CordovaPlugin {
               this.callbackContext.error("Call Failed. You need to enter a phone number.");
             }
             return true;
+        } else if (action.equals("checkCallPermission")) {
+            permissionCounter = 2;
+            this.checkCallPermission();
+            return true;
         }
         return false;
     }
@@ -371,5 +375,11 @@ public class CordovaCall extends CordovaPlugin {
                 this.callNumber();
                 break;
         }
+    }
+
+    public void requestPermissions() {
+        Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
+        phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
     }
 }

@@ -94,3 +94,7 @@ exports.on = function(e, f) {
     };
     exec(success, error, "CordovaCall", "registerEvent", [e]);
 };
+
+exports.checkCallPermission = function(error) {
+    exec(null, error, "CordovaCall", "checkCallPermission", []);
+};
