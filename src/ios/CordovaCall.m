@@ -21,6 +21,7 @@ BOOL isCancelPush = NO;
 NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
+BOOL isMutedState = NO;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -603,15 +604,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
-    [action fulfill];
     BOOL isMuted = action.muted;
+    // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
+    if (isMutedState == isMuted) {
+        [action fail];
+        return;
+    }
     for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
         CDVPluginResult* pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:isMuted?@"mute event called successfully":@"unmute event called successfully"];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
-    //[action fail];
+    isMutedState = isMuted;
+    [action fulfill];
 }
 
 - (void)provider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action
