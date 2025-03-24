@@ -625,8 +625,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     BOOL isMuted = action.muted;
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
     if (isMutedState == isMuted) {
-        NSLog(@"[objC] Ignoring duplicate mute/unmute event");
-        [action fail];
+        NSLog(@"[objC] Ignoring duplicate mute/unmute event. isMutedState: %@, isMuted: %@", isMutedState ? @"true" : @"false", isMuted ? @"true" : @"false");
+        [action fulfill];
         return;
     }
     isMutedState = isMuted; // Update the internal state with the new value
