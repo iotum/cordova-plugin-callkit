@@ -6,7 +6,7 @@
 
 @synthesize VoIPPushCallbackId, VoIPPushClassName, VoIPPushMethodName;
 
-BOOL hasVideo = YES;
+BOOL hasVideo = NO;
 NSString* appName;
 NSString* ringtone;
 NSString* icon;
@@ -21,7 +21,8 @@ BOOL isCancelPush = NO;
 NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
-BOOL isMutedState = NO;
+BOOL isMutedState;
+BOOL isProgramaticMuteChange;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -342,36 +343,52 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)mute:(CDVInvokedUrlCommand*)command
 {
-    CDVPluginResult* pluginResult = nil;
-    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
-    if(sessionInstance.isInputGainSettable) {
-      BOOL success = [sessionInstance setInputGain:0.0 error:nil];
-      if(success) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
-      } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
-      }
+    __block CDVPluginResult* pluginResult = nil;
+    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
+    if ([calls count] == 1) {
+        isProgramaticMuteChange = YES;
+        CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:calls[0].UUID muted:YES];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
+        NSLog(@"[objC] Programatically Muting Call");
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
+            } else {
+                NSLog(@"[objC] Error occurred muting Call");
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                isProgramaticMuteChange = NO;
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
     } else {
-      pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not muted because this device does not allow changing inputGain"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to mute"];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)unmute:(CDVInvokedUrlCommand*)command
 {
-    CDVPluginResult* pluginResult = nil;
-    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
-    if(sessionInstance.isInputGainSettable) {
-      BOOL success = [sessionInstance setInputGain:1.0 error:nil];
-      if(success) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
-      } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
-      }
+    __block CDVPluginResult* pluginResult = nil;
+    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
+    if ([calls count] == 1) {
+        isProgramaticMuteChange = YES;
+        CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:calls[0].UUID muted:NO];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
+        NSLog(@"[objC] Programatically Unmuting Call");
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
+            } else {
+                NSLog(@"[objC] Error occurred unmuting Call");
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                isProgramaticMuteChange = NO;
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
     } else {
-      pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not unmuted because this device does not allow changing inputGain"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to unmute"];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
@@ -604,19 +621,28 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
+    NSLog(@"[ObjC] Received mute/unmute event");
     BOOL isMuted = action.muted;
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
     if (isMutedState == isMuted) {
+        NSLog(@"[objC] Ignoring duplicate mute/unmute event");
         [action fail];
         return;
     }
-    for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
-        CDVPluginResult* pluginResult = nil;
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:isMuted?@"mute event called successfully":@"unmute event called successfully"];
-        [pluginResult setKeepCallbackAsBool:YES];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+    isMutedState = isMuted; // Update the internal state with the new value
+    // Ignore programatic mute/unmute events, it already sent a callback when called
+    if (isProgramaticMuteChange == YES) {
+        NSLog(@"[objC] Ignoring programatic mute/unmute event");
+        isProgramaticMuteChange = NO;
+    } else {
+        for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
+            NSLog(@"[objC] Sending mute/unmute event to JS");
+            CDVPluginResult* pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:isMuted?@"mute event called successfully":@"unmute event called successfully"];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        }
     }
-    isMutedState = isMuted;
     [action fulfill];
 }
 
