@@ -117,10 +117,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
-      NSLog(@"Configuring Audio");
+      [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
-       NSLog(@"Unknown error returned from setupAudioSession");
+      [self logMessage:@"Unknown error returned from setupAudioSession"];
     }
     return;
 }
@@ -203,6 +203,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)receiveCall:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"receiveCall"];
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callName = [command.arguments objectAtIndex:0];
     NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
@@ -251,6 +252,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)sendCall:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"sendCall"];
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callName = [command.arguments objectAtIndex:0];
     NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
@@ -281,6 +283,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)connectCall:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"connectCall"];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -296,6 +299,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)endCall:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"endCall"];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -305,12 +309,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
             } else {
-                NSLog(@"%@",[error localizedDescription]);
+                [self logMessage:[error localizedDescription]];
             }
         }];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call ended successfully"];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No call exists for you to connect"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"]; // Don't error if no call exists
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -343,19 +347,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)mute:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"mute"];
     __block CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if ([calls count] == 1) {
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:calls[0].UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
-        NSLog(@"[CordovaCall] Programatically Muting Call");
+        [self logMessage:@"Programatically Muting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = YES;
                 isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
-                NSLog(@"[CordovaCall] Error occurred muting Call");
+            [self logMessage:@"Error occurred muting Call"];
                 isMutedState = NO;
                 isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
@@ -370,19 +375,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)unmute:(CDVInvokedUrlCommand*)command
 {
+    [self logMessage:@"unmute"];
     __block CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if ([calls count] == 1) {
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:calls[0].UUID muted:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
-        NSLog(@"[CordovaCall] Programatically Unmuting Call");
+        [self logMessage:@"Programatically Unmuting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = NO;
                 isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
-                NSLog(@"[CordovaCall] Error occurred unmuting Call");
+            [self logMessage:@"Error occurred unmuting Call"];
                 isMutedState = YES;
                 isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
@@ -463,7 +469,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
         if (error == nil) {
         } else {
-            NSLog(@"%@",[error localizedDescription]);
+            [self logMessage:[error localizedDescription]];
         }
     }];
 }
@@ -498,11 +504,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 // CallKit - Provider
 - (void)providerDidReset:(CXProvider *)provider
 {
-    NSLog(@"%s","providerdidreset");
+    [self logMessage:@"providerDidReset"];
 }
 
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action
 {
+    [self logMessage:@"performStartCallAction"];
     [self setupAudioSession];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = action.handle;
@@ -530,17 +537,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
-    NSLog(@"activated audio");
+    [self logMessage:@"activated audio"];
     monitorAudioRouteChange = YES;
 }
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
-    NSLog(@"deactivated audio");
+    [self logMessage:@"deactivated audio"];
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
 {
+    [self logMessage:@"performAnswerCallAction"];
     [self setupAudioSession];
     [action fulfill];
 
@@ -565,6 +573,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
 {
+    [self logMessage:@"performEndCallAction"];
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if([calls count] == 1) {
         if(calls[0].hasConnected) {
@@ -626,23 +635,23 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
     BOOL isMuted = action.muted;
-    NSLog(@"[CordovaCall] Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", isMutedState ? @"muted" : @"unmuted");
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", isMutedState ? @"muted" : @"unmuted"]];
     [action fulfill];
     // Ignore programatic mute/unmute events
     if (isProgramaticMute) {
-        NSLog(@"[CordovaCall] Ignoring programatic mute/unmute event.");
+        [self logMessage:@"Ignoring programatic mute/unmute event."];
         isProgramaticMute = NO;
         return;
     }
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
     if (isMutedState == isMuted) {
-        NSLog(@"[CordovaCall] Ignoring duplicate %@ event.", isMuted ? @"mute" : @"unmute");
+        [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isMuted ? @"mute" : @"unmute"]];
         return;
     }
     isMutedState = isMuted ? YES : NO; // Update the internal state with the new value
     for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
-        NSLog(@"[CordovaCall] Sending %@ event to JS", isMuted ? @"mute" : @"unmute");
+        [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
         CDVPluginResult* pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"]];
         [pluginResult setKeepCallbackAsBool:YES];
@@ -652,7 +661,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider performPlayDTMFCallAction:(CXPlayDTMFCallAction *)action
 {
-    NSLog(@"DTMF Event");
+    [self logMessage:@"DTMF Event"];
     NSString *digits = action.digits;
     [action fulfill];
     for (id callbackId in callbackIds[@"DTMF"]) {
@@ -666,7 +675,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)init:(CDVInvokedUrlCommand*)command
 {
     self.VoIPPushCallbackId = command.callbackId;
-    NSLog(@"[CordovaCall] callbackId: %@", self.VoIPPushCallbackId);
+    [self logMessage:[NSString stringWithFormat:@"callbackId: %@", self.VoIPPushCallbackId]];
     
     [self sendTokenPluginResult];
 }
@@ -688,12 +697,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 #define PushKit Delegate Methods
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type{
     if([credentials.token length] == 0) {
-        NSLog(@"[CordovaCall] No device token!");
+        [self logMessage:@"No device token!"];
         return;
     }
 
     //http://stackoverflow.com/a/9372848/534755
-    NSLog(@"[CordovaCall] Device token: %@", credentials.token);
+    [self logMessage:[NSString stringWithFormat:@"Device token: %@", credentials.token]];
     const unsigned *tokenBytes = [credentials.token bytes];
     self.VoIPPushToken = [NSString stringWithFormat:@"%08x%08x%08x%08x%08x%08x%08x%08x",
                          ntohl(tokenBytes[0]), ntohl(tokenBytes[1]), ntohl(tokenBytes[2]),
@@ -707,15 +716,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion
 {   
-    NSLog(@"[CordovaCall] didReceiveIncomingPush: %@", payload);
+    [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: %@", payload]];
     NSDictionary *payloadDict = payload.dictionaryPayload[@"aps"];
-    NSLog(@"[CordovaCall] didReceiveIncomingPushWithPayload: %@", payloadDict);
+    [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPushWithPayload: %@", payloadDict]];
 
     NSString *message = payloadDict[@"alert"];
-    NSLog(@"[CordovaCall] received VoIP message: %@", message);
+    [self logMessage:[NSString stringWithFormat:@"received VoIP message: %@", message]];
     
     NSDictionary *data = payload.dictionaryPayload[@"data"];
-    NSLog(@"[CordovaCall] received data: %@", data);
+    [self logMessage:[NSString stringWithFormat:@"received data: %@", data]];
     
     NSMutableDictionary* results = [NSMutableDictionary dictionaryWithCapacity:2];
     [results setObject:message forKey:@"function"];
@@ -756,7 +765,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         
     }
     @catch (NSException *exception) {
-        NSLog(@"[CordovaCall] error: %@", exception.reason);
+        [self logMessage:[NSString stringWithFormat:@"error: %@", exception.reason]];
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:exception.reason];
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
@@ -768,5 +777,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
         completion();
     }
+}
+
+- (void)logMessage:(NSString *)message
+{
+    NSLog(@"[CordovaCall]: %@", message);
 }
 @end
