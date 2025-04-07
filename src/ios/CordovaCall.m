@@ -726,6 +726,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Store URL and Call Id so they can be used for call Answer/Reject 
     callBackUrl = [caller valueForKey:@"CallbackUrl"];
     callId = [caller valueForKey:@"ConnectionId"];
+    hasVideo = [[caller valueForKey:@"Video"] boolValue];
     callData = data;
     if ([[caller valueForKey:@"CancelPush"] isEqualToString:@"true"]) {
         isCancelPush = YES;
