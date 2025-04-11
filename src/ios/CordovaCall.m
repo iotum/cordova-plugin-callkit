@@ -610,13 +610,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-            callData = nil; // clear out the data in case CordovaCall.receiveCall('caller'); called from JS side
 
             // CDVPluginResult* pluginResult = nil;
             // pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"answer event called successfully"];
             // [pluginResult setKeepCallbackAsBool:YES];
             // [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
+        callData = nil; // clear out the data in case CordovaCall.receiveCall('caller'); called from JS side
     } else if ([response isEqualToString:@"reject"]) {
         for (id callbackId in callbackIds[@"reject"]) {
             CDVPluginResult* pluginResult = nil;
