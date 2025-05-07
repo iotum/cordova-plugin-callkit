@@ -2,11 +2,21 @@
 #import "Intents/Intents.h"
 #import <CallKit/CallKit.h>
 #import <objc/runtime.h>
+#import "AppDelegate+APPAppEvent.h"
 
 @implementation AppDelegate (CordovaCall)
 
-- (BOOL)application:(UIApplication *)application continueUserActivity:(NSUserActivity *)userActivity restorationHandler:(void (^)(NSArray *restorableObjects))restorationHandler
+- (void)pluginInitialize {
+  [[NSNotificationCenter defaultCenter] 
+    addObserver:self 
+    selector:@selector(cordovaCallContinueUserActivityHandler:) 
+    name:UIApplicationContinueUserActivity object:nil
+  ];
+}
+
+- (void) cordovaCallContinueUserActivityHandler:(NSNotification*)notification
 {
+    NSUserActivity* userActivity = notification.object;
     INInteraction *interaction = userActivity.interaction;
     INIntent *intent = interaction.intent;
     BOOL isVideo = [intent isKindOfClass:[INStartVideoCallIntent class]];
@@ -26,6 +36,5 @@
     }
     NSDictionary *intentInfo = @{ @"callName" : callName, @"callId" : callId, @"isVideo" : isVideo?@YES:@NO};
     [[NSNotificationCenter defaultCenter] postNotificationName:@"RecentsCallNotification" object:intentInfo];
-    return YES;
 }
 @end

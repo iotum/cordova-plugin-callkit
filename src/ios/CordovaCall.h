@@ -1,8 +1,10 @@
 #import <Cordova/CDV.h>
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
+#import "APPAppEventDelegate.h"
+#import <Cordova/CDVPlugin.h>
 
-@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate>
+@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate, APPAppEventDelegate>
 
 // PushKit
 @property (nonatomic, copy) NSString *VoIPPushCallbackId;
