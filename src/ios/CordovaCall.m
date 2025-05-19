@@ -644,7 +644,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     CDVPluginResult* pluginResult = nil;
-    if([calls count] == 1) {
+    if([calls count] == 1 && !calls[0].hasConnected) {
         [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"dismissRingingCall event called successfully"];
     } else {
