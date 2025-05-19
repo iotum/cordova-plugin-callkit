@@ -17,7 +17,6 @@ BOOL monitorAudioRouteChange = NO;
 BOOL enableDTMF = NO;
 PKPushRegistry *_voipRegistry;
 
-BOOL isCancelPush = NO;
 NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
@@ -223,26 +222,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.supportsUngrouping = NO;
         callUpdate.supportsHolding = NO;
         callUpdate.supportsDTMF = enableDTMF;
-        if (!isCancelPush) {
-            [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
-                if(error == nil) {
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
-                } else {
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
-                }
-            }];
-            for (id callbackId in callbackIds[@"receiveCall"]) {
-                CDVPluginResult* pluginResult = nil;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
-                [pluginResult setKeepCallbackAsBool:YES];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
+            if(error == nil) {
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+            } else {
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
             }
-        } else {
-            NSArray<CXCall *> *calls = self.callController.callObserver.calls;
-            if([calls count] == 1) {
-                [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
-            }
-            
+        }];
+        for (id callbackId in callbackIds[@"receiveCall"]) {
+            CDVPluginResult* pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
     } else {
         [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Caller id can't be empty"] callbackId:command.callbackId];
@@ -527,7 +518,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if([callbackIds[@"sendCall"] count] == 0) {
         pendingCallFromRecents = callData;
     }
-    //[action fail];
 }
 
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
@@ -547,23 +537,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self setupAudioSession];
     [action fulfill];
 
-    // Notify Webhook that Native Call has been Answered
-    // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"pickup"]];
-    // NSURLSession *session = [NSURLSession sharedSession];
-    // [[session dataTaskWithURL:statusUpdateUrl
-    //           completionHandler:^(NSData *statusUpdateData,
-    //                               NSURLResponse *statusUpdateResponse,
-    //                               NSError *statusUpdateError) {
-    //             // handle response
-    // }] resume];
-
     if ([callbackIds[@"answer"] count] == 0) {
         // callbackId for event not registered, add to pending to trigger on registration
         [pendingCallResponses addObject:PENDING_RESPONSE_ANSWER];
     } else {
         [self triggerCordovaEventForCallResponse:@"answer"];
     }
-    //[action fail];
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
@@ -579,18 +558,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
             }
         } else {
-            // Notify Webhook that Native Call has been Declined
-            // if (!isCancelPush) {
-            //     NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"declined_callee"]];
-            //     NSURLSession *session = [NSURLSession sharedSession];
-            //     [[session dataTaskWithURL:statusUpdateUrl
-            //             completionHandler:^(NSData *statusUpdateData,
-            //                                 NSURLResponse *statusUpdateResponse,
-            //                                 NSError *statusUpdateError) {
-            //                 // handle response
-            //     }] resume];
-            // }
-
             if ([callbackIds[@"reject"] count] == 0) {
                 // callbackId for event not registered, add to pending to trigger on registration
                 [pendingCallResponses addObject:PENDING_RESPONSE_REJECT];
@@ -601,7 +568,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     monitorAudioRouteChange = NO;
     [action fulfill];
-    //[action fail];
 }
 
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
@@ -648,6 +614,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
 }
+
+- (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"dismissRingingCall"];
+
+    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
+    CDVPluginResult* pluginResult = nil;
+    if([calls count] == 1 && !calls[0].hasConnected) {
+        [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"dismissRingingCall event called successfully"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 // PushKit
 - (void)init:(CDVInvokedUrlCommand*)command
 {
@@ -716,22 +698,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callId = [caller valueForKey:@"ConnectionId"];
     hasVideo = [[caller valueForKey:@"Video"] boolValue];
     callData = data;
-    if ([[caller valueForKey:@"CancelPush"] isEqualToString:@"true"]) {
-        isCancelPush = YES;
-    } else {
-        isCancelPush = NO;
-    }
-    if (!isCancelPush) {
-        // Notify Webhook that VOIP Push Has been received and app is started
-        // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
-        // NSURLSession *session = [NSURLSession sharedSession];
-        // [[session dataTaskWithURL:statusUpdateUrl
-        //           completionHandler:^(NSData *statusUpdateData,
-        //                               NSURLResponse *statusUpdateResponse,
-        //                               NSError *statusUpdateError) {
-        //             // handle response
-        // }] resume];
-    }
 
     [self receiveCall:newCommand];
     @try {
