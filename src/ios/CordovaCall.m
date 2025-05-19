@@ -21,7 +21,6 @@ NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
 BOOL isMutedState;
-BOOL isProgramaticMute;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -348,18 +347,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = YES;
-                isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
             [self logMessage:@"Error occurred muting Call"];
                 isMutedState = NO;
-                isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to mute"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to mute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -376,18 +373,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = NO;
-                isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
             [self logMessage:@"Error occurred unmuting Call"];
                 isMutedState = YES;
-                isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to unmute"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to unmute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -576,25 +571,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
-    if ([response isEqualToString:@"answer"]) {
-        for (id callbackId in callbackIds[@"answer"]) {
+    if ([@[@"answer", @"reject"] containsObject:response]) {
+        for (id callbackId in callbackIds[response]) {
             CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-            callData = nil; // clear out the data in case CordovaCall.receiveCall('caller'); called from JS side
-
-            // CDVPluginResult* pluginResult = nil;
-            // pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"answer event called successfully"];
-            // [pluginResult setKeepCallbackAsBool:YES];
-            // [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
-    } else if ([response isEqualToString:@"reject"]) {
-        for (id callbackId in callbackIds[@"reject"]) {
-            CDVPluginResult* pluginResult = nil;
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"reject event called successfully"];
-            [pluginResult setKeepCallbackAsBool:YES];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-        }
+        callData = nil; // clear out the Call Data in case CordovaCall.receiveCall('caller'); called from JS side
     }
 }
 
@@ -603,12 +586,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     BOOL isMuted = action.muted;
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", isMutedState ? @"muted" : @"unmuted"]];
     [action fulfill];
-    // Ignore programatic mute/unmute events
-    if (isProgramaticMute) {
-        [self logMessage:@"Ignoring programatic mute/unmute event."];
-        isProgramaticMute = NO;
-        return;
-    }
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
     if (isMutedState == isMuted) {
@@ -719,6 +696,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Store URL and Call Id so they can be used for call Answer/Reject 
     callBackUrl = [caller valueForKey:@"CallbackUrl"];
     callId = [caller valueForKey:@"ConnectionId"];
+    hasVideo = [[caller valueForKey:@"Video"] boolValue];
     callData = data;
 
     [self receiveCall:newCommand];
