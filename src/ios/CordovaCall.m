@@ -115,6 +115,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
+    //   [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -628,6 +629,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void) log:(CDVInvokedUrlCommand*)command
+{
+    CDVPluginResult* pluginResult = nil;
+    NSString* message = [command.arguments objectAtIndex:0];
+    if (message != nil && [message length] > 0) {
+        [self logMessage:message];
+    }
 }
 
 // PushKit

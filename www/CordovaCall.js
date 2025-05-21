@@ -102,3 +102,7 @@ exports.checkCallPermission = function(error) {
 exports.dismissRingingCall = function(success) {
     exec(success, null, "CordovaCall", "dismissRingingCall", []);
 }
+
+exports.log = function(message) {
+    exec(null, null, "CordovaCall", "log", [message]);
+}
