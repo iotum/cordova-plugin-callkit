@@ -665,8 +665,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Invalidate any existing timer
     [self stopKeepAlive:command];
 
-    // Start a new timer that fires every second
-    keepAlive = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
+    // Immediately send the first callback
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[[NSDate date] description]];
+    [pluginResult setKeepCallbackAsBool:YES];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+
+    // Start a new timer that fires every 100ms as Answer -> SIP Connect is ~1s duration
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer * _Nonnull timer) {
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[[NSDate date] description]];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
