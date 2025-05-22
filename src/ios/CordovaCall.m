@@ -279,11 +279,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
-    if([calls count] == 1) {
+    if([calls count] == 1 && !calls[0].hasConnected) {
         [self.provider reportOutgoingCallWithUUID:calls[0].UUID connectedAtDate:nil];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No call exists for you to connect"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -292,6 +292,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)endCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"endCall"];
+    [self stopKeepAlive:command];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -566,6 +567,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
 {
     [self logMessage:@"performEndCallAction"];
+    [self stopKeepAlive:nil];
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if([calls count] == 1) {
         if(calls[0].hasConnected) {
@@ -650,7 +652,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void) log:(CDVInvokedUrlCommand*)command
 {
-    CDVPluginResult* pluginResult = nil;
     NSString* message = [command.arguments objectAtIndex:0];
     if (message != nil && [message length] > 0) {
         [self logMessage:message];
@@ -674,10 +675,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
 {
-    [self logMessage:@"stopKeepAlive"];
-    
     // Invalidate the timer
     if (keepAlive) {
+        [self logMessage:@"stopKeepAlive"];
         [keepAlive invalidate];
         keepAlive = nil;
     }
