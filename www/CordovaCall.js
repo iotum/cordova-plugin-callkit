@@ -106,3 +106,11 @@ exports.dismissRingingCall = function(success) {
 exports.log = function(message) {
     exec(null, null, "CordovaCall", "log", [message]);
 }
+
+exports.keepAlive = function(callback) {
+    exec(callback, null, "CordovaCall", "keepAlive", []);
+}
+
+exports.stopKeepAlive = function() {
+    exec(null, null, "CordovaCall", "stopKeepAlive", []);
+}

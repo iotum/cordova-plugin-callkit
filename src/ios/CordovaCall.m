@@ -21,6 +21,7 @@ NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
 BOOL isMutedState;
+NSTimer *keepAlive;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -115,7 +116,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
-    //   [sessionInstance setActive:YES error:nil];
+      [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -544,6 +545,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     } else {
         [self triggerCordovaEventForCallResponse:@"answer"];
     }
+
+    UIApplication *app = [UIApplication sharedApplication];
+    __block UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
+    bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
+        // End the background task after 30s
+        [app endBackgroundTask:bgTask];
+        bgTask = UIBackgroundTaskInvalid;
+    }];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self logMessage:@"29 seconds elapsed, ending background task"];
+
+        // End the background task
+        [app endBackgroundTask:bgTask];
+        bgTask = UIBackgroundTaskInvalid;
+    });
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
@@ -640,6 +657,32 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
+- (void) keepAlive:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"keepAlive"];
+    
+    // Invalidate any existing timer
+    [self stopKeepAlive:command];
+
+    // Start a new timer that fires every second
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
+        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[[NSDate date] description]];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }];
+}
+
+- (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"stopKeepAlive"];
+    
+    // Invalidate the timer
+    if (keepAlive) {
+        [keepAlive invalidate];
+        keepAlive = nil;
+    }
+}
+
 // PushKit
 - (void)init:(CDVInvokedUrlCommand*)command
 {
@@ -710,6 +753,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callData = data;
 
     [self receiveCall:newCommand];
+
     @try {
         NSError * err;
         NSData * jsonData = [NSJSONSerialization dataWithJSONObject:data options:0 error:&err];
