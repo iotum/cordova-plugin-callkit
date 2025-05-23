@@ -116,7 +116,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
-      [sessionInstance setActive:YES error:nil];
+    //   [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -658,29 +658,31 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
+-(void) _keepWKWebViewActive:(NSTimer*) timer {
+    if ([self.webView isKindOfClass:[WKWebView class]]) {
+        [self logMessage:@"keepingAlive"];
+        WKWebView *wkWebView = (WKWebView *)self.webView;
+        [wkWebView evaluateJavaScript:@"1+1" completionHandler:nil];
+    }
+}
+
 - (void) keepAlive:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"keepAlive"];
     
     // Invalidate any existing timer
     [self stopKeepAlive:command];
-
-    // Immediately send the first callback
-    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[[NSDate date] description]];
-    [pluginResult setKeepCallbackAsBool:YES];
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-
-    // Start a new timer that fires every 100ms as Answer -> SIP Connect is ~1s duration
-    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer * _Nonnull timer) {
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[[NSDate date] description]];
-        [pluginResult setKeepCallbackAsBool:YES];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-    }];
+    
+    [self _keepWKWebViewActive:nil];
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                     target:self
+                                     selector:@selector(_keepWKWebViewActive:)
+                                     userInfo:nil
+                                     repeats:YES];
 }
 
 - (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
 {
-    // Invalidate the timer
     if (keepAlive) {
         [self logMessage:@"stopKeepAlive"];
         [keepAlive invalidate];
