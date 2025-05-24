@@ -114,3 +114,29 @@ exports.keepAlive = function(callback) {
 exports.stopKeepAlive = function() {
     exec(null, null, "CordovaCall", "stopKeepAlive", []);
 }
+
+exports.wsConnect = function (wsOptions, listener, success, error) {
+  if (listener === undefined) {
+    listener = function (data) {
+      console.log(data);
+    };
+  }
+
+  var connectSuccess = function (data) {
+    if (success !== undefined && typeof success === "function") {
+      success(data);
+    }
+    var flushRecvBuffer = true;
+    exec(listener, listener, "CordovaCall", 'wsAddListeners', [data.webSocketId, flushRecvBuffer]);
+  };
+
+  exec(connectSuccess, error, "CordovaCall", 'wsConnect', [wsOptions]);
+};
+
+exports.wsSend = function (wsId, message) {
+  exec(null, null, "CordovaCall", 'wsSend', [wsId, message]);
+};
+
+exports.wsClose = function (wsId, code, reason) {
+  exec(null, null, "CordovaCall", 'wsClose', [wsId, code, reason]);
+};
