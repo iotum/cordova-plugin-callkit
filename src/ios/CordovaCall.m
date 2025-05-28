@@ -25,6 +25,7 @@ NSDictionary* callData;
 BOOL isMutedState;
 NSTimer *keepAlive;
 NSMutableDictionary* webSockets;
+UIBackgroundTaskIdentifier bgTask;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -296,7 +297,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)endCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"endCall"];
-    [self stopKeepAlive:command];
+    [self stopKeepAlive:nil];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -552,19 +553,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     UIApplication *app = [UIApplication sharedApplication];
-    __block UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
     bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
-        // End the background task after 30s
-        [app endBackgroundTask:bgTask];
-        bgTask = UIBackgroundTaskInvalid;
+        // Have iOS kill the background task after 30s, we don't want this to run
+        [self _endBackgroundTask];
     }];
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [self logMessage:@"29 seconds elapsed, ending background task"];
-
-        // End the background task
-        [app endBackgroundTask:bgTask];
-        bgTask = UIBackgroundTaskInvalid;
+        [self _endBackgroundTask];
     });
 }
 
@@ -675,7 +671,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"keepAlive"];
     
     // Invalidate any existing timer
-    [self stopKeepAlive:command];
+    [keepAlive invalidate];
+    keepAlive = nil;
     
     [self _keepWKWebViewActive:nil];
     keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.2
@@ -687,11 +684,25 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
 {
-    if (keepAlive) {
-        [self logMessage:@"stopKeepAlive"];
-        [keepAlive invalidate];
-        keepAlive = nil;
-    }
+  if (keepAlive) {
+    [self logMessage:@"stopKeepAlive"];
+    [keepAlive invalidate];
+    keepAlive = nil;
+    // End background task also
+    [self _endBackgroundTask];
+  }
+}
+
+- (void)_endBackgroundTask;
+{
+  if (bgTask != UIBackgroundTaskInvalid) {
+    [self logMessage:@"Ending Background Task"];
+    UIApplication *app = [UIApplication sharedApplication];
+    [app endBackgroundTask:bgTask];
+    bgTask = UIBackgroundTaskInvalid;
+  }
+  // Stop keepAlive just in case we don't call it from JS
+  [self stopKeepAlive:nil];
 }
 
 - (void)wsConnect:(CDVInvokedUrlCommand*)command;
