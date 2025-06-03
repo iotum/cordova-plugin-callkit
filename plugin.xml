@@ -56,11 +56,17 @@
         </config-file>
 
         <header-file src="src/ios/CordovaCall.h" />
-
         <source-file src="src/ios/CordovaCall.m" />
         <source-file src="src/ios/AppDelegateCordovaCall.m" />
+        <header-file src="src/ios/WebSocketAdvanced.h" />
+        <source-file src="src/ios/WebSocketAdvanced.m" />
 
         <framework src="PushKit.framework" />
         <framework src="CallKit.framework" />
+        <podspec>
+            <pods use-frameworks="true">
+                <pod name="SocketRocket" spec="0.7.0" />
+            </pods>
+        </podspec>
     </platform>
 </plugin>
