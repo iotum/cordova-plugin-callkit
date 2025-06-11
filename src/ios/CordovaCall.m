@@ -1,6 +1,8 @@
 #import "CordovaCall.h"
 #import <Cordova/CDV.h>
 #import <AVFoundation/AVFoundation.h>
+#import "WebSocketAdvanced.h"
+#import <SocketRocket/SocketRocket.h>
 
 @implementation CordovaCall
 
@@ -21,6 +23,9 @@ NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
 BOOL isMutedState;
+NSTimer *keepAlive;
+NSMutableDictionary* webSockets;
+UIBackgroundTaskIdentifier bgTask;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -78,6 +83,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     
     // Read VoIPPushToken from UserDefaults
     self.VoIPPushToken = [[NSUserDefaults standardUserDefaults] stringForKey:KEY_VOIP_PUSH_TOKEN];
+    webSockets = [[NSMutableDictionary alloc] init];
 }
 
 // CallKit - Interface
@@ -115,6 +121,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
+    //   [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -277,11 +284,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
-    if([calls count] == 1) {
+    if([calls count] == 1 && !calls[0].hasConnected) {
         [self.provider reportOutgoingCallWithUUID:calls[0].UUID connectedAtDate:nil];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No call exists for you to connect"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -290,6 +297,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)endCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"endCall"];
+    [self stopKeepAlive:nil];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -543,11 +551,23 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     } else {
         [self triggerCordovaEventForCallResponse:@"answer"];
     }
+
+    UIApplication *app = [UIApplication sharedApplication];
+    bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
+        // Have iOS kill the background task after 30s, we don't want this to run
+        [self _endBackgroundTask];
+    }];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self logMessage:@"29 seconds elapsed, ending background task"];
+        [self _endBackgroundTask];
+    });
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
 {
     [self logMessage:@"performEndCallAction"];
+    [self stopKeepAlive:nil];
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if([calls count] == 1) {
         if(calls[0].hasConnected) {
@@ -630,6 +650,120 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void) log:(CDVInvokedUrlCommand*)command
+{
+    NSString* message = [command.arguments objectAtIndex:0];
+    if (message != nil && [message length] > 0) {
+        [self logMessage:message];
+    }
+}
+
+-(void) _keepWKWebViewActive:(NSTimer*) timer {
+    if ([self.webView isKindOfClass:[WKWebView class]]) {
+        [self logMessage:@"keepingAlive"];
+        WKWebView *wkWebView = (WKWebView *)self.webView;
+        [wkWebView evaluateJavaScript:@"1+1" completionHandler:nil];
+    }
+}
+
+- (void) keepAlive:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"keepAlive"];
+    
+    // Invalidate any existing timer
+    [keepAlive invalidate];
+    keepAlive = nil;
+    
+    [self _keepWKWebViewActive:nil];
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                     target:self
+                                     selector:@selector(_keepWKWebViewActive:)
+                                     userInfo:nil
+                                     repeats:YES];
+}
+
+- (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
+{
+  if (keepAlive) {
+    [self logMessage:@"stopKeepAlive"];
+    [keepAlive invalidate];
+    keepAlive = nil;
+    // End background task also
+    [self _endBackgroundTask];
+  }
+}
+
+- (void)_endBackgroundTask;
+{
+  if (bgTask != UIBackgroundTaskInvalid) {
+    [self logMessage:@"Ending Background Task"];
+    UIApplication *app = [UIApplication sharedApplication];
+    [app endBackgroundTask:bgTask];
+    bgTask = UIBackgroundTaskInvalid;
+  }
+  // Stop keepAlive just in case we don't call it from JS
+  [self stopKeepAlive:nil];
+}
+
+- (void)wsConnect:(CDVInvokedUrlCommand*)command;
+{
+    NSDictionary* wsOptions = [command argumentAtIndex:0];
+    WebSocketAdvanced* ws = [[WebSocketAdvanced alloc] initWithOptions:wsOptions
+                                                       commandDelegate:self.commandDelegate
+                                                       callbackId:command.callbackId];
+    [webSockets setObject:ws forKey:ws.webSocketId];
+}
+
+- (void)wsAddListeners:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    BOOL flushRecvBuffer = [command argumentAtIndex:1];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsAddListeners:command.callbackId flushRecvBuffer:flushRecvBuffer];
+    }
+}
+
+- (void)wsSend:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    NSString* message = [command argumentAtIndex:1];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsSendMessage:message];
+    }
+}
+
+- (void)wsClose:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    NSNumber* code = [command argumentAtIndex:1];
+    NSString* reason = [command argumentAtIndex:2];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsClose:code.integerValue reason:reason];
+    }
+}
+
+- (void)dealloc;
+{
+    [self _closeAllSockets];
+}
+
+- (void)onReset;
+{
+    [super onReset];
+}
+
+- (void)_closeAllSockets;
+{
+    for(id wsId in webSockets) {
+        WebSocketAdvanced* ws = [webSockets objectForKey:wsId];
+        [ws wsClose];
+    }
+    [webSockets removeAllObjects];
+}
+
 // PushKit
 - (void)init:(CDVInvokedUrlCommand*)command
 {
@@ -700,6 +834,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callData = data;
 
     [self receiveCall:newCommand];
+
     @try {
         NSError * err;
         NSData * jsonData = [NSJSONSerialization dataWithJSONObject:data options:0 error:&err];
