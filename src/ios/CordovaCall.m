@@ -84,6 +84,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Read VoIPPushToken from UserDefaults
     self.VoIPPushToken = [[NSUserDefaults standardUserDefaults] stringForKey:KEY_VOIP_PUSH_TOKEN];
     webSockets = [[NSMutableDictionary alloc] init];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleRemotePushNotification:) name:@"CallkitHandleRemotePushNotification" object:nil];
 }
 
 // CallKit - Interface
@@ -638,16 +640,30 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"dismissRingingCall"];
+    
+    BOOL didDismiss = [self _dismissRingingCall];
+    CDVPluginResult* pluginResult = nil;
+    if (didDismiss) {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                          messageAsString:@"dismissRingingCall event called successfully"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                          messageAsString:@"No ringing call to dismiss"];
+    }
+
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+// Internal method that can be called from within the plugin
+- (BOOL)_dismissRingingCall {
+    [self logMessage:@"_dismissRingingCall"];
 
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
-    CDVPluginResult* pluginResult = nil;
-    if([calls count] == 1 && !calls[0].hasConnected) {
+    if ([calls count] == 1 && !calls[0].hasConnected) {
         [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"dismissRingingCall event called successfully"];
-    } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        return YES;
     }
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    return NO;
 }
 
 - (void) log:(CDVInvokedUrlCommand*)command
@@ -855,6 +871,37 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
         completion();
+    }
+}
+
+// Handles all remote push notifications sent from forked FCM, only action on a dismiss notification
+- (void)handleRemotePushNotification:(NSNotification *)notification {
+    NSDictionary *userInfo = notification.object;
+    [self logMessage:[NSString stringWithFormat:@"Received remote notification: %@", userInfo]];
+    
+    // Checks if payload param is in notification
+    NSString *payloadString = userInfo[@"payload"];
+    if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {
+        [self logMessage:@"No valid payload string found in notification"];
+        return;
+    }
+
+    NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
+    NSError *error = nil;
+
+    // Parse JSON payload
+    NSDictionary *payloadDict = [NSJSONSerialization JSONObjectWithData:payloadData options:0 error:&error];
+    if (error || ![payloadDict isKindOfClass:[NSDictionary class]]) {
+        [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        return;
+    }
+
+    // Do something if dismiss key is present and true
+    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == false) {
+        [self logMessage:@"Dismiss key not found in payload or is false"];
+        return;
+    } else {
+        [self _dismissRingingCall];
     }
 }
 
