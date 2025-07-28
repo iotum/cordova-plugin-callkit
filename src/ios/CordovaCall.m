@@ -33,6 +33,8 @@ NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
 
 NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
+static CustomFCMReceiver* customFCMReceiver;
+
 - (void)pluginInitialize
 {
     CXProviderConfiguration *providerConfiguration;
@@ -85,7 +87,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     self.VoIPPushToken = [[NSUserDefaults standardUserDefaults] stringForKey:KEY_VOIP_PUSH_TOKEN];
     webSockets = [[NSMutableDictionary alloc] init];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleRemotePushNotification:) name:@"CallkitHandleRemotePushNotification" object:nil];
+    // Initialize a custom FCM message receiver
+    customFCMReceiver = [[CustomFCMReceiver alloc] init];
+    customFCMReceiver.cordovaCall = self;
 }
 
 // CallKit - Interface
@@ -874,16 +878,23 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
-// Handles all remote push notifications sent from forked FCM, only action on a dismiss notification
-- (void)handleRemotePushNotification:(NSNotification *)notification {
-    NSDictionary *userInfo = notification.object;
-    [self logMessage:[NSString stringWithFormat:@"Received remote notification: %@", userInfo]];
+- (void)logMessage:(NSString *)message
+{
+    NSLog(@"[CordovaCall]: %@", message);
+}
+@end
+
+@implementation CustomFCMReceiver
+
+- (bool) sendNotification:(NSDictionary *)userInfo {
+    bool isHandled = false;
+    [self.cordovaCall logMessage:[NSString stringWithFormat:@"Received remote notification: %@", userInfo]];
     
     // Checks if payload param is in notification
     NSString *payloadString = userInfo[@"payload"];
     if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {
-        [self logMessage:@"No valid payload string found in notification"];
-        return;
+        [self.cordovaCall logMessage:@"No valid payload string found in notification"];
+        return isHandled;
     }
 
     NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
@@ -892,21 +903,19 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Parse JSON payload
     NSDictionary *payloadDict = [NSJSONSerialization JSONObjectWithData:payloadData options:0 error:&error];
     if (error || ![payloadDict isKindOfClass:[NSDictionary class]]) {
-        [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
-        return;
+        [self.cordovaCall logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        return isHandled;
     }
 
     // Do something if dismiss key is present and true
     if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == false) {
-        [self logMessage:@"Dismiss key not found in payload or is false"];
-        return;
+        [self.cordovaCall logMessage:@"Dismiss key not found in payload or is false"];
+        return isHandled;
     } else {
-        [self _dismissRingingCall];
+        [self.cordovaCall _dismissRingingCall];
+        isHandled = true;
     }
+    return isHandled;
 }
 
-- (void)logMessage:(NSString *)message
-{
-    NSLog(@"[CordovaCall]: %@", message);
-}
 @end

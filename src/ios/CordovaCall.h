@@ -1,6 +1,14 @@
 #import <Cordova/CDV.h>
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
+#import "FirebasePluginMessageReceiver.h"
+
+@class CordovaCall;
+
+@interface CustomFCMReceiver : FirebasePluginMessageReceiver
+@property (nonatomic, weak) CordovaCall *cordovaCall;
+- (bool) sendNotification:(NSDictionary *)userInfo;
+@end
 
 @interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate>
 
