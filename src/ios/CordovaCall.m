@@ -16,7 +16,7 @@ BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
 BOOL monitorAudioRouteChange = NO;
-BOOL enableDTMF = NO;
+BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
 NSString* callBackUrl;
