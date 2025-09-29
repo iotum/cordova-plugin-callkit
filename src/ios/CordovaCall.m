@@ -845,6 +845,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Store URL and Call Id so they can be used for call Answer/Reject 
     callBackUrl = [data valueForKey:@"callback_url"];
     callId = [data valueForKey:@"call_uuid"];
+    NSString *Type = [data valueForKey:@"type"];
+    hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
     callData = data;
     // Notify Webhook that VOIP Push Has been received and app is started
     // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
