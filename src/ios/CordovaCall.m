@@ -1,6 +1,8 @@
 #import "CordovaCall.h"
 #import <Cordova/CDV.h>
 #import <AVFoundation/AVFoundation.h>
+#import "WebSocketAdvanced.h"
+#import <SocketRocket/SocketRocket.h>
 
 @implementation CordovaCall
 
@@ -14,15 +16,16 @@ BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
 BOOL monitorAudioRouteChange = NO;
-BOOL enableDTMF = NO;
+BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
-BOOL isCancelPush = NO;
 NSString* callBackUrl;
 NSString* callId;
 NSDictionary* callData;
 BOOL isMutedState;
-BOOL isProgramaticMute;
+NSTimer *keepAlive;
+NSMutableDictionary* webSockets;
+UIBackgroundTaskIdentifier bgTask;
 
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
@@ -80,6 +83,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     
     // Read VoIPPushToken from UserDefaults
     self.VoIPPushToken = [[NSUserDefaults standardUserDefaults] stringForKey:KEY_VOIP_PUSH_TOKEN];
+    webSockets = [[NSMutableDictionary alloc] init];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleRemotePushNotification:) name:@"CallkitHandleRemotePushNotification" object:nil];
 }
 
 // CallKit - Interface
@@ -117,6 +123,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
+    //   [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -224,26 +231,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.supportsUngrouping = NO;
         callUpdate.supportsHolding = NO;
         callUpdate.supportsDTMF = enableDTMF;
-        if (!isCancelPush) {
-            [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
-                if(error == nil) {
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
-                } else {
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
-                }
-            }];
-            for (id callbackId in callbackIds[@"receiveCall"]) {
-                CDVPluginResult* pluginResult = nil;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
-                [pluginResult setKeepCallbackAsBool:YES];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
+            if(error == nil) {
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+            } else {
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
             }
-        } else {
-            NSArray<CXCall *> *calls = self.callController.callObserver.calls;
-            if([calls count] == 1) {
-                [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
-            }
-            
+        }];
+        for (id callbackId in callbackIds[@"receiveCall"]) {
+            CDVPluginResult* pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
     } else {
         [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Caller id can't be empty"] callbackId:command.callbackId];
@@ -287,11 +286,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
-    if([calls count] == 1) {
+    if([calls count] == 1 && !calls[0].hasConnected) {
         [self.provider reportOutgoingCallWithUUID:calls[0].UUID connectedAtDate:nil];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No call exists for you to connect"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -300,6 +299,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)endCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"endCall"];
+    [self stopKeepAlive:nil];
     CDVPluginResult* pluginResult = nil;
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
 
@@ -357,18 +357,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = YES;
-                isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
             [self logMessage:@"Error occurred muting Call"];
                 isMutedState = NO;
-                isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to mute"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to mute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -385,18 +383,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 isMutedState = NO;
-                isProgramaticMute = YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
             [self logMessage:@"Error occurred unmuting Call"];
                 isMutedState = YES;
-                isProgramaticMute = NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call to unmute"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to unmute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -532,7 +528,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if([callbackIds[@"sendCall"] count] == 0) {
         pendingCallFromRecents = callData;
     }
-    //[action fail];
 }
 
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
@@ -552,28 +547,29 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self setupAudioSession];
     [action fulfill];
 
-    // Notify Webhook that Native Call has been Answered
-    // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"pickup"]];
-    // NSURLSession *session = [NSURLSession sharedSession];
-    // [[session dataTaskWithURL:statusUpdateUrl
-    //           completionHandler:^(NSData *statusUpdateData,
-    //                               NSURLResponse *statusUpdateResponse,
-    //                               NSError *statusUpdateError) {
-    //             // handle response
-    // }] resume];
-
     if ([callbackIds[@"answer"] count] == 0) {
         // callbackId for event not registered, add to pending to trigger on registration
         [pendingCallResponses addObject:PENDING_RESPONSE_ANSWER];
     } else {
         [self triggerCordovaEventForCallResponse:@"answer"];
     }
-    //[action fail];
+
+    UIApplication *app = [UIApplication sharedApplication];
+    bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
+        // Have iOS kill the background task after 30s, we don't want this to run
+        [self _endBackgroundTask];
+    }];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self logMessage:@"29 seconds elapsed, ending background task"];
+        [self _endBackgroundTask];
+    });
 }
 
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
 {
     [self logMessage:@"performEndCallAction"];
+    [self stopKeepAlive:nil];
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
     if([calls count] == 1) {
         if(calls[0].hasConnected) {
@@ -597,25 +593,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
-    if ([response isEqualToString:@"answer"]) {
-        for (id callbackId in callbackIds[@"answer"]) {
+    if ([@[@"answer", @"reject"] containsObject:response]) {
+        for (id callbackId in callbackIds[response]) {
             CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-            callData = nil; // clear out the data in case CordovaCall.receiveCall('caller'); called from JS side
-
-            // CDVPluginResult* pluginResult = nil;
-            // pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"answer event called successfully"];
-            // [pluginResult setKeepCallbackAsBool:YES];
-            // [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
-    } else if ([response isEqualToString:@"reject"]) {
-        for (id callbackId in callbackIds[@"reject"]) {
-            CDVPluginResult* pluginResult = nil;
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"reject event called successfully"];
-            [pluginResult setKeepCallbackAsBool:YES];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-        }
+        callData = nil; // clear out the Call Data in case CordovaCall.receiveCall('caller'); called from JS side
     }
 }
 
@@ -624,12 +608,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     BOOL isMuted = action.muted;
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", isMutedState ? @"muted" : @"unmuted"]];
     [action fulfill];
-    // Ignore programatic mute/unmute events
-    if (isProgramaticMute) {
-        [self logMessage:@"Ignoring programatic mute/unmute event."];
-        isProgramaticMute = NO;
-        return;
-    }
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
     if (isMutedState == isMuted) {
@@ -658,6 +636,150 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
 }
+
+- (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"dismissRingingCall"];
+    
+    BOOL didDismiss = [self _dismissRingingCall];
+    CDVPluginResult* pluginResult = nil;
+    if (didDismiss) {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                          messageAsString:@"dismissRingingCall event called successfully"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                          messageAsString:@"No ringing call to dismiss"];
+    }
+
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+// Internal method that can be called from within the plugin
+- (BOOL)_dismissRingingCall {
+    [self logMessage:@"_dismissRingingCall"];
+
+    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
+    if ([calls count] == 1 && !calls[0].hasConnected) {
+        [self.provider reportCallWithUUID:calls[0].UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+        return YES;
+    }
+    return NO;
+}
+
+- (void) log:(CDVInvokedUrlCommand*)command
+{
+    NSString* message = [command.arguments objectAtIndex:0];
+    if (message != nil && [message length] > 0) {
+        [self logMessage:message];
+    }
+}
+
+-(void) _keepWKWebViewActive:(NSTimer*) timer {
+    if ([self.webView isKindOfClass:[WKWebView class]]) {
+        [self logMessage:@"keepingAlive"];
+        WKWebView *wkWebView = (WKWebView *)self.webView;
+        [wkWebView evaluateJavaScript:@"1+1" completionHandler:nil];
+    }
+}
+
+- (void) keepAlive:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"keepAlive"];
+    
+    // Invalidate any existing timer
+    [keepAlive invalidate];
+    keepAlive = nil;
+    
+    [self _keepWKWebViewActive:nil];
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                     target:self
+                                     selector:@selector(_keepWKWebViewActive:)
+                                     userInfo:nil
+                                     repeats:YES];
+}
+
+- (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
+{
+  if (keepAlive) {
+    [self logMessage:@"stopKeepAlive"];
+    [keepAlive invalidate];
+    keepAlive = nil;
+    // End background task also
+    [self _endBackgroundTask];
+  }
+}
+
+- (void)_endBackgroundTask;
+{
+  if (bgTask != UIBackgroundTaskInvalid) {
+    [self logMessage:@"Ending Background Task"];
+    UIApplication *app = [UIApplication sharedApplication];
+    [app endBackgroundTask:bgTask];
+    bgTask = UIBackgroundTaskInvalid;
+  }
+  // Stop keepAlive just in case we don't call it from JS
+  [self stopKeepAlive:nil];
+}
+
+- (void)wsConnect:(CDVInvokedUrlCommand*)command;
+{
+    NSDictionary* wsOptions = [command argumentAtIndex:0];
+    WebSocketAdvanced* ws = [[WebSocketAdvanced alloc] initWithOptions:wsOptions
+                                                       commandDelegate:self.commandDelegate
+                                                       callbackId:command.callbackId];
+    [webSockets setObject:ws forKey:ws.webSocketId];
+}
+
+- (void)wsAddListeners:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    BOOL flushRecvBuffer = [command argumentAtIndex:1];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsAddListeners:command.callbackId flushRecvBuffer:flushRecvBuffer];
+    }
+}
+
+- (void)wsSend:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    NSString* message = [command argumentAtIndex:1];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsSendMessage:message];
+    }
+}
+
+- (void)wsClose:(CDVInvokedUrlCommand*)command;
+{
+    NSString* webSocketId = [command argumentAtIndex:0];
+    NSNumber* code = [command argumentAtIndex:1];
+    NSString* reason = [command argumentAtIndex:2];
+    WebSocketAdvanced* ws = [webSockets valueForKey:webSocketId];
+    if (ws != nil) {
+        [ws wsClose:code.integerValue reason:reason];
+    }
+}
+
+- (void)dealloc;
+{
+    [self _closeAllSockets];
+}
+
+- (void)onReset;
+{
+    [super onReset];
+}
+
+- (void)_closeAllSockets;
+{
+    for(id wsId in webSockets) {
+        WebSocketAdvanced* ws = [webSockets objectForKey:wsId];
+        [ws wsClose];
+    }
+    [webSockets removeAllObjects];
+}
+
 // PushKit
 - (void)init:(CDVInvokedUrlCommand*)command
 {
@@ -735,6 +857,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // }] resume];
 
     [self receiveCall:newCommand];
+
     @try {
         NSError * err;
         NSData * jsonData = [NSJSONSerialization dataWithJSONObject:data options:0 error:&err];
@@ -755,6 +878,37 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
         completion();
+    }
+}
+
+// Handles all remote push notifications sent from forked FCM, only action on a dismiss notification
+- (void)handleRemotePushNotification:(NSNotification *)notification {
+    NSDictionary *userInfo = notification.object;
+    [self logMessage:[NSString stringWithFormat:@"Received remote notification: %@", userInfo]];
+    
+    // Checks if payload param is in notification
+    NSString *payloadString = userInfo[@"payload"];
+    if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {
+        [self logMessage:@"No valid payload string found in notification"];
+        return;
+    }
+
+    NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
+    NSError *error = nil;
+
+    // Parse JSON payload
+    NSDictionary *payloadDict = [NSJSONSerialization JSONObjectWithData:payloadData options:0 error:&error];
+    if (error || ![payloadDict isKindOfClass:[NSDictionary class]]) {
+        [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        return;
+    }
+
+    // Do something if dismiss key is present and true
+    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == false) {
+        [self logMessage:@"Dismiss key not found in payload or is false"];
+        return;
+    } else {
+        [self _dismissRingingCall];
     }
 }
 
