@@ -34,23 +34,12 @@ public class MyConnectionService extends ConnectionService {
         conn = null;
     }
 
-    private static JSONObject convertBundleToJson(Bundle bundle) {
-        JSONObject jsonObject = new JSONObject();
-        if (bundle != null) {
-            for (String key : bundle.keySet()) {
-                Object value = bundle.get(key);
-                try {
-                    jsonObject.put(key, value);
-                } catch (JSONException e) {
-                    Log.e(TAG, "Failed to convert bundle to JSON", e);
-                }
-            }
-        }
-        return jsonObject;
-    }
-
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
+        Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
+        String fromAddress = requestExtras.getString("from");
+        String payloadString = requestExtras.getString("payload");
+
         final Connection connection = new Connection() {
             @Override
             public void onAnswer() {
@@ -82,8 +71,7 @@ public class MyConnectionService extends ConnectionService {
                         for (final CallbackContext callbackContext : callbackContexts) {
                             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                                 public void run() {
-                                    Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
-                                    PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
+                                    PluginResult result = new PluginResult(PluginResult.Status.OK, payloadString);
                                     result.setKeepCallback(true);
                                     callbackContext.sendPluginResult(result);
                                 }
@@ -103,7 +91,7 @@ public class MyConnectionService extends ConnectionService {
                 for (final CallbackContext callbackContext : callbackContexts) {
                     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                         public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, "reject event called successfully");
+                            PluginResult result = new PluginResult(PluginResult.Status.OK, payloadString);
                             result.setKeepCallback(true);
                             callbackContext.sendPluginResult(result);
                         }
@@ -134,7 +122,8 @@ public class MyConnectionService extends ConnectionService {
                 }
             }
         };
-        connection.setAddress(Uri.parse(request.getExtras().getString("from")), TelecomManager.PRESENTATION_ALLOWED);
+
+        connection.setAddress(Uri.parse(fromAddress), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
