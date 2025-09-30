@@ -21,7 +21,7 @@ PKPushRegistry *_voipRegistry;
 
 NSString* callBackUrl;
 NSString* callId;
-NSDictionary* callData;
+NSString* callData;
 BOOL isMutedState;
 NSTimer *keepAlive;
 NSMutableDictionary* webSockets;
@@ -595,7 +595,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
     if ([@[@"answer", @"reject"] containsObject:response]) {
         for (id callbackId in callbackIds[response]) {
-            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
@@ -839,7 +839,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [results setObject:message forKey:@"function"];
     [results setObject:@"" forKey:@"extra"];
 
-    NSDictionary* payloadObj = [data objectForKey:@"payload"];
+    NSError *error = nil;
+    NSData *payloadJsonData = [[data objectForKey:@"payload"] dataUsingEncoding:NSUTF8StringEncoding];
+    NSDictionary *payloadObj = [NSJSONSerialization JSONObjectWithData:payloadJsonData options:0 error:&error];
+    if (error || ![payloadObj isKindOfClass:[NSDictionary class]]) {
+        [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        return;
+    }
     NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [payloadObj valueForKey:@"call_uuid"], nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
     
@@ -848,7 +854,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callId = [payloadObj valueForKey:@"call_uuid"];
     NSString *Type = [payloadObj valueForKey:@"type"];
     hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
-    callData = data;
+    callData = [data valueForKey:@"payload"];
     // Notify Webhook that VOIP Push Has been received and app is started
     // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
     // NSURLSession *session = [NSURLSession sharedSession];
