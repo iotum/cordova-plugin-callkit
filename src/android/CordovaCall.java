@@ -58,6 +58,18 @@ public class CordovaCall extends CordovaPlugin {
         return callbackContextMap;
     }
 
+    public static void emitEvent(String eventName, PluginResult result) {
+        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventName);
+        for (final CallbackContext callbackContext : callbackContexts) {
+            CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                public void run() {
+                    result.setKeepCallback(true);
+                    callbackContext.sendPluginResult(result);
+                }
+            });
+        }
+    }
+
     public static CordovaInterface getCordova() {
         return cordovaInterface;
     }
