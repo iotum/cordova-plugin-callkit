@@ -21,7 +21,7 @@ PKPushRegistry *_voipRegistry;
 
 NSString* callBackUrl;
 NSString* callId;
-NSDictionary* callData;
+NSString* callData;
 BOOL isMutedState;
 NSTimer *keepAlive;
 NSMutableDictionary* webSockets;
@@ -595,7 +595,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)triggerCordovaEventForCallResponse:(NSString*) response {
     if ([@[@"answer", @"reject"] containsObject:response]) {
         for (id callbackId in callbackIds[response]) {
-            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
@@ -824,7 +824,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self sendTokenPluginResult];
 }
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion
-{   
+{
     [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: %@", payload]];
     NSDictionary *payloadDict = payload.dictionaryPayload[@"aps"];
     [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPushWithPayload: %@", payloadDict]];
@@ -839,25 +839,39 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [results setObject:message forKey:@"function"];
     [results setObject:@"" forKey:@"extra"];
 
-    NSObject* caller = [data objectForKey:@"Caller"];
-    NSArray* args = [NSArray arrayWithObjects:[caller valueForKey:@"Username"], [caller valueForKey:@"ConnectionId"], nil];
+    NSError *error = nil;
+    NSData *payloadJsonData = [[data objectForKey:@"payload"] dataUsingEncoding:NSUTF8StringEncoding];
+    NSDictionary *payloadObj = [NSJSONSerialization JSONObjectWithData:payloadJsonData options:0 error:&error];
+    if (error || ![payloadObj isKindOfClass:[NSDictionary class]]) {
+        [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        return;
+    }
+    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [payloadObj valueForKey:@"call_uuid"], nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
     
-    // Store URL and Call Id so they can be used for call Answer/Reject 
-    callBackUrl = [caller valueForKey:@"CallbackUrl"];
-    callId = [caller valueForKey:@"ConnectionId"];
-    hasVideo = [[caller valueForKey:@"Video"] boolValue];
-    callData = data;
+    // Store URL and Call Id so they can be used for call Answer/Reject
+    callBackUrl = [payloadObj valueForKey:@"callback_url"];
+    callId = [payloadObj valueForKey:@"call_uuid"];
+    NSString *Type = [payloadObj valueForKey:@"type"];
+    hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
+    callData = [data valueForKey:@"payload"];
+    // Notify Webhook that VOIP Push Has been received and app is started
+    // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
+    // NSURLSession *session = [NSURLSession sharedSession];
+    // [[session dataTaskWithURL:statusUpdateUrl
+    //           completionHandler:^(NSData *statusUpdateData,
+    //                               NSURLResponse *statusUpdateResponse,
+    //                               NSError *statusUpdateError) {
+    //             // handle response
+    // }] resume];
 
     [self receiveCall:newCommand];
 
     @try {
         NSError * err;
-        NSData * jsonData = [NSJSONSerialization dataWithJSONObject:data options:0 error:&err];
+        NSData * jsonData = [NSJSONSerialization dataWithJSONObject:payloadObj options:0 error:&err];
         NSString * dataString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         [results setObject:dataString forKey:@"extra"];
-        
-        
     }
     @catch (NSException *exception) {
         [self logMessage:[NSString stringWithFormat:@"error: %@", exception.reason]];
