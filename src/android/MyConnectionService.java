@@ -37,7 +37,6 @@ public class MyConnectionService extends ConnectionService {
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
-        String fromAddress = requestExtras.getString("from");
         String payloadString = requestExtras.getString("payload");
 
         final Connection connection = new Connection() {
@@ -96,7 +95,18 @@ public class MyConnectionService extends ConnectionService {
             }
         };
 
-        connection.setAddress(Uri.parse(fromAddress), TelecomManager.PRESENTATION_ALLOWED);
+        String from = requestExtras.getString("from");
+        connection.setCallerDisplayName(from, TelecomManager.PRESENTATION_ALLOWED);
+
+        try {
+            JSONObject payload = new JSONObject(payloadString);
+            if (payload.has("call_url")) {
+                connection.setAddress(Uri.parse(payload.getString("call_url")), TelecomManager.PRESENTATION_ALLOWED);
+            }
+        } catch (JSONException e) {
+            Log.e(TAG,"Failed to set connection address: ", e);
+        }
+
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
