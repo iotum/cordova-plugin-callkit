@@ -98,15 +98,6 @@ public class MyConnectionService extends ConnectionService {
         String from = requestExtras.getString("from");
         connection.setCallerDisplayName(from, TelecomManager.PRESENTATION_ALLOWED);
 
-        try {
-            JSONObject payload = new JSONObject(payloadString);
-            if (payload.has("call_url")) {
-                connection.setAddress(Uri.parse(payload.getString("call_url")), TelecomManager.PRESENTATION_ALLOWED);
-            }
-        } catch (JSONException e) {
-            Log.e(TAG,"Failed to set connection address: ", e);
-        }
-
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
@@ -146,17 +137,17 @@ public class MyConnectionService extends ConnectionService {
 
             @Override
             public void onStateChanged(int state) {
-              if(state == Connection.STATE_DIALING) {
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
-                    }
-                }, 500);
-              }
+                if(state == Connection.STATE_DIALING) {
+                    final Handler handler = new Handler();
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+                        }
+                    }, 500);
+                }
             }
         };
         connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
