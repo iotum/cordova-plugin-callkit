@@ -37,7 +37,6 @@ public class MyConnectionService extends ConnectionService {
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
-        String fromAddress = requestExtras.getString("from");
         String payloadString = requestExtras.getString("payload");
 
         final Connection connection = new Connection() {
@@ -67,16 +66,7 @@ public class MyConnectionService extends ConnectionService {
                 handler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
-                        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("answer");
-                        for (final CallbackContext callbackContext : callbackContexts) {
-                            CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                                public void run() {
-                                    PluginResult result = new PluginResult(PluginResult.Status.OK, payloadString);
-                                    result.setKeepCallback(true);
-                                    callbackContext.sendPluginResult(result);
-                                }
-                            });
-                        }
+                        CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
                     }
                 }, 1000);
             }
@@ -87,16 +77,7 @@ public class MyConnectionService extends ConnectionService {
                 this.setDisconnected(cause);
                 this.destroy();
                 conn = null;
-                ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("reject");
-                for (final CallbackContext callbackContext : callbackContexts) {
-                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, payloadString);
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
-                        }
-                    });
-                }
+                CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
@@ -110,36 +91,20 @@ public class MyConnectionService extends ConnectionService {
                 this.setDisconnected(cause);
                 this.destroy();
                 conn = null;
-                ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
-                for (final CallbackContext callbackContext : callbackContexts) {
-                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, "hangup event called successfully");
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
-                        }
-                    });
-                }
+                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
         };
 
-        connection.setAddress(Uri.parse(fromAddress), TelecomManager.PRESENTATION_ALLOWED);
+        String from = requestExtras.getString("from");
+        connection.setCallerDisplayName(from, TelecomManager.PRESENTATION_ALLOWED);
+
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
             connection.setStatusHints(statusHints);
         }
         conn = connection;
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("receiveCall");
-        for (final CallbackContext callbackContext : callbackContexts) {
-            CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                public void run() {
-                    PluginResult result = new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully");
-                    result.setKeepCallback(true);
-                    callbackContext.sendPluginResult(result);
-                }
-            });
-        }
+        CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
         return connection;
     }
 
@@ -167,31 +132,22 @@ public class MyConnectionService extends ConnectionService {
                 this.setDisconnected(cause);
                 this.destroy();
                 conn = null;
-                ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
-                for (final CallbackContext callbackContext : callbackContexts) {
-                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, "hangup event called successfully");
-                            result.setKeepCallback(true);
-                            callbackContext.sendPluginResult(result);
-                        }
-                    });
-                }
+                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
 
             @Override
             public void onStateChanged(int state) {
-              if(state == Connection.STATE_DIALING) {
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
-                    }
-                }, 500);
-              }
+                if(state == Connection.STATE_DIALING) {
+                    final Handler handler = new Handler();
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+                        }
+                    }, 500);
+                }
             }
         };
         connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
@@ -202,18 +158,7 @@ public class MyConnectionService extends ConnectionService {
         }
         connection.setDialing();
         conn = connection;
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("sendCall");
-        if(callbackContexts != null) {
-            for (final CallbackContext callbackContext : callbackContexts) {
-                CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                    public void run() {
-                        PluginResult result = new PluginResult(PluginResult.Status.OK, "sendCall event called successfully");
-                        result.setKeepCallback(true);
-                        callbackContext.sendPluginResult(result);
-                    }
-                });
-            }
-        }
+        CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
         return connection;
     }
 }
