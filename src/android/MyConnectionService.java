@@ -21,8 +21,6 @@ import android.net.Uri;
 import android.util.Log;
 
 public class MyConnectionService extends ConnectionService {
-    private static PhoneAccountHandle phoneAccountHandle;
-    private static PhoneAccount phoneAccount;
 
     static final String TAG = "MyConnectionService";
 
@@ -77,9 +75,8 @@ public class MyConnectionService extends ConnectionService {
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
-        String from = requestExtras.getString("from");
         String payloadString = requestExtras.getString("payload");
-        Log.d(TAG, "onCreateIncomingConnection from: " + from + " payload: " + payloadString);
+        Log.d(TAG, "onCreateIncomingConnection payload: " + payloadString);
 
         final Connection connection = new Connection() {
             private CallNotification callNotification;
@@ -94,23 +91,6 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onAnswer()");
 
                 this.setActive();
-                // Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-                // // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_FROM_BACKGROUND);
-                // CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
-                // ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("answer");
-                // for (final CallbackContext callbackContext : callbackContexts) {
-                //     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                //         public void run() {
-                //             Bundle data = request.getExtras() != null ? request.getExtras() : new Bundle();
-                //             PluginResult result = new PluginResult(PluginResult.Status.OK, convertBundleToJson(data));
-                //             result.setKeepCallback(true);
-                //             callbackContext.sendPluginResult(result);
-                //         }
-                //     });
-                // }
-                // TelecomManager tm = (TelecomManager) CordovaCall.getCordova().getActivity().getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
-                // tm.showInCallScreen(false);
 
                 // Allow enough time for our app to open and register the answer callback
                 final Handler handler = new Handler();
