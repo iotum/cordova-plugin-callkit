@@ -1,9 +1,10 @@
 package com.dmarc.cordovacall;
 
-import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.Context;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
@@ -11,19 +12,58 @@ import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
 import android.telecom.DisconnectCause;
+import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
-import java.util.ArrayList;
 import android.util.Log;
-import org.json.JSONObject;
-import org.json.JSONException;
 
 public class MyConnectionService extends ConnectionService {
+    private static PhoneAccountHandle phoneAccountHandle;
+    private static PhoneAccount phoneAccount;
 
-    private static String TAG = "MyConnectionService";
+    static final String TAG = "MyConnectionService";
+
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        String intentAction = intent.getAction();
+        Log.d(TAG, "==> onStartCommand " + intentAction);
+
+        if (intentAction.equals("INCOMING_CALL_INVITE")) {
+            String from = intent.getStringExtra("from");
+            String payloadString = intent.getStringExtra("payload");
+
+            JSONObject payload = null;
+            try {
+                payload = new JSONObject(payloadString);
+            } catch (JSONException e) {
+                throw new RuntimeException("Failed to parse payload JSON string: " + e);
+            }
+
+            if (payload.optBoolean("dismiss", false)) {
+                Log.d(TAG, "received intent indicating call is dismissed");
+
+                // TODO: Close the corresponding connection and notification
+            } else {
+                Log.d(TAG, "creating new incoming connection, associated with app PhoneAccount, from: " + from + " payload: " + payload);
+                TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+
+                Context context = (Context) this.getApplicationContext();
+
+                PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
+
+                Bundle callInfo = new Bundle();
+                callInfo.putString("payload", payloadString);
+
+                // After this a new connection is created (see onCreateIncomingConnection below)
+                tm.addNewIncomingCall(phoneAccountHandle, callInfo);
+            }
+        }
+
+        return super.onStartCommand(intent, flags, startId);
+    }
+
     private static Connection conn;
 
     public static Connection getConnection() {
@@ -37,11 +77,22 @@ public class MyConnectionService extends ConnectionService {
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
+        String from = requestExtras.getString("from");
         String payloadString = requestExtras.getString("payload");
+        Log.d(TAG, "onCreateIncomingConnection from: " + from + " payload: " + payloadString);
 
         final Connection connection = new Connection() {
+            private CallNotification callNotification;
+
+            @Override
+            public void onShowIncomingCallUi() {
+                Log.d(TAG, "onShowIncomingCallUi()");
+            }
+
             @Override
             public void onAnswer() {
+                Log.d(TAG, "onAnswer()");
+
                 this.setActive();
                 // Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
                 // // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -95,7 +146,6 @@ public class MyConnectionService extends ConnectionService {
             }
         };
 
-        String from = requestExtras.getString("from");
         connection.setCallerDisplayName(from, TelecomManager.PRESENTATION_ALLOWED);
 
         Icon icon = CordovaCall.getIcon();
