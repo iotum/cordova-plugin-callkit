@@ -21,6 +21,8 @@ import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Random;
@@ -32,8 +34,14 @@ public class MyConnectionService extends ConnectionService {
     Context context;
 
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null) {
+            Log.d(TAG, "onStartCommand called with no intent");
+            return super.onStartCommand(intent, flags, startId);
+        }
+
         String intentAction = intent.getAction();
-        Log.d(TAG, "==> onStartCommand " + intentAction);
+
+        Log.d(TAG, "onStartCommand called with intent, action: " + intentAction);
 
         if (intentAction.equals("INCOMING_CALL_INVITE")) {
             String from = intent.getStringExtra("from");
@@ -168,6 +176,12 @@ public class MyConnectionService extends ConnectionService {
         callNotification.show();
 
         return connection;
+    }
+
+    @Override
+    public void onCreateIncomingConferenceFailed(@Nullable PhoneAccountHandle connectionManagerPhoneAccount, @Nullable ConnectionRequest request) {
+        super.onCreateIncomingConferenceFailed(connectionManagerPhoneAccount, request);
+        Log.d(TAG, "onCreateIncomingConferenceFailed");
     }
 
     @Override
