@@ -1,5 +1,6 @@
 package com.dmarc.cordovacall;
 
+import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -20,9 +21,15 @@ import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Random;
+
 public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
+    private static HashMap<String, Connection> connectionMap = new HashMap<String, Connection>(); // Keys are call_uuid strings
+    Context context;
 
     public int onStartCommand(Intent intent, int flags, int startId) {
         String intentAction = intent.getAction();
@@ -47,7 +54,7 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "creating new incoming connection, associated with app PhoneAccount, from: " + from + " payload: " + payload);
                 TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
-                Context context = (Context) this.getApplicationContext();
+                context = (Context) this.getApplicationContext();
 
                 PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
 
@@ -77,13 +84,26 @@ public class MyConnectionService extends ConnectionService {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
         String payloadString = requestExtras.getString("payload");
         Log.d(TAG, "onCreateIncomingConnection payload: " + payloadString);
+        JSONObject payload;
+        try {
+             payload = new JSONObject(payloadString);
+        } catch (JSONException e) {
+            throw new RuntimeException("Failed to parse payload string: " + e);
+        }
+
+        String callUUID = payload.optString("call_uuid", Integer.toString(new Random().nextInt(1002) + 1));
+
+        final CallNotification callNotification = new CallNotification(payloadString, context);
 
         final Connection connection = new Connection() {
-            private CallNotification callNotification;
+            // CallNotification callNotification;
 
             @Override
             public void onShowIncomingCallUi() {
+                // TODO this should be invoked automatically for self-managed PhoneAccount connections, but its not....
                 Log.d(TAG, "onShowIncomingCallUi()");
+                // this.callNotification = new CallNotification(payloadString, context);
+                // this.callNotification.show();
             }
 
             @Override
@@ -122,11 +142,16 @@ public class MyConnectionService extends ConnectionService {
                 this.setDisconnected(cause);
                 this.destroy();
                 conn = null;
+
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
+
+                if (callNotification != null) {
+                    callNotification.close();
+                }
             }
         };
 
-        connection.setCallerDisplayName(from, TelecomManager.PRESENTATION_ALLOWED);
+        connection.setCallerDisplayName(payload.optString("from", "UNKNOWN CALLER"), TelecomManager.PRESENTATION_ALLOWED);
 
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
@@ -135,6 +160,13 @@ public class MyConnectionService extends ConnectionService {
         }
         conn = connection;
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
+
+        connectionMap.put(callUUID, connection);
+
+        // TODO move this into connection.showIncomingCallUi()
+        Log.d(TAG, "Showing call notification (after connection creation)");
+        callNotification.show();
+
         return connection;
     }
 
