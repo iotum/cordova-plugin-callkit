@@ -31,6 +31,7 @@ public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
     private static HashMap<String, Connection> connectionMap = new HashMap<String, Connection>(); // Keys are call_uuid strings
+    private static HashMap<String, Boolean> connectionAddedMap = new HashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
     Context context;
 
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -73,19 +74,24 @@ public class MyConnectionService extends ConnectionService {
                 if (connectionMap.get(callUUID) != null) {
                     Log.d(TAG, "A connection is already created for call_uuid: " + callUUID);
                 } else {
-                    TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+                    if (connectionAddedMap.containsKey(callUUID)) {
+                        Log.d(TAG, "A connection was already added for call_uuid: " + callUUID);
+                    } else {
+                        TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
-                    context = (Context) this.getApplicationContext();
+                        context = (Context) this.getApplicationContext();
 
-                    PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
+                        PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
 
-                    Bundle callInfo = new Bundle();
-                    callInfo.putString("payload", payloadString);
+                        Bundle callInfo = new Bundle();
+                        callInfo.putString("payload", payloadString);
 
-                    Log.d(TAG, "Adding new incoming connection, payload: " + payload);
+                        Log.d(TAG, "Adding new incoming connection, payload: " + payload);
 
-                    // After this a new connection is created (see onCreateIncomingConnection below)
-                    tm.addNewIncomingCall(phoneAccountHandle, callInfo);
+                        // After this a new connection is created (see onCreateIncomingConnection below)
+                        tm.addNewIncomingCall(phoneAccountHandle, callInfo);
+                        connectionAddedMap.put(callUUID, true);
+                    }
                 }
             }
         }
@@ -154,6 +160,7 @@ public class MyConnectionService extends ConnectionService {
 
             @Override
             public void onReject() {
+                Log.d(TAG, "onReject, call_uuid: " + callUUID);
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.REJECTED);
                 this.setDisconnected(cause);
                 this.destroy();
@@ -163,11 +170,13 @@ public class MyConnectionService extends ConnectionService {
 
             @Override
             public void onAbort() {
+                Log.d(TAG, "onAbort, call_uuid: " + callUUID);
                 super.onAbort();
             }
 
             @Override
             public void onDisconnect() {
+                Log.d(TAG, "onDissconnect, call_uuid: " + callUUID);
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
                 this.destroy();
@@ -202,9 +211,11 @@ public class MyConnectionService extends ConnectionService {
     }
 
     @Override
-    public void onCreateIncomingConferenceFailed(@Nullable PhoneAccountHandle connectionManagerPhoneAccount, @Nullable ConnectionRequest request) {
-        super.onCreateIncomingConferenceFailed(connectionManagerPhoneAccount, request);
-        Log.d(TAG, "onCreateIncomingConferenceFailed");
+    public void onCreateIncomingConnectionFailed(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
+        super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request);
+        Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
+        String payloadString = requestExtras.getString("payload");
+        Log.d(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
     }
 
     @Override
