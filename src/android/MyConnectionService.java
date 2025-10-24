@@ -129,17 +129,15 @@ public class MyConnectionService extends ConnectionService {
         }
         final String callUUID = _callUUID;
 
-        final CallNotification callNotification = new CallNotification(payloadString, context);
-
         final Connection connection = new Connection() {
-            // CallNotification callNotification;
+            CallNotification callNotification;
 
             @Override
             public void onShowIncomingCallUi() {
                 // TODO this should be invoked automatically for self-managed PhoneAccount connections, but its not....
-                Log.d(TAG, "onShowIncomingCallUi()");
-                // this.callNotification = new CallNotification(payloadString, context);
-                // this.callNotification.show();
+                Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
+                this.callNotification = new CallNotification(payloadString, context);
+                this.callNotification.show();
             }
 
             @Override
@@ -203,9 +201,7 @@ public class MyConnectionService extends ConnectionService {
 
         connectionMap.put(callUUID, connection);
 
-        // TODO move this into connection.showIncomingCallUi()
-        Log.d(TAG, "Showing call notification (after connection creation)");
-        callNotification.show();
+        connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
 
         return connection;
     }
