@@ -9,9 +9,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Icon;
 import android.media.RingtoneManager;
+import android.os.Build;
 import android.os.Handler;
+import android.util.Log;
+
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.Person;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -19,6 +24,8 @@ import java.util.Random;
 
 
 public class CallNotification {
+    private static final String TAG = "CallNotification";
+
     private String pushMessagePayload;
     private Integer notificationID;
     private Context context;
@@ -79,6 +86,16 @@ public class CallNotification {
 
         String callerName = payload.optString("from", "UNKNOWN");
 
+        Person callerPerson = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            callerPerson = new Person.Builder()
+                    .setName(callerName)
+                    .setImportant(true)
+                    .build();
+        }
+
+        // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Incoming call")
             .setContentText(callerName)
@@ -86,13 +103,18 @@ public class CallNotification {
             .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setFullScreenIntent(fullScreenPendingIntent, true)
-                // .setStyle(NotificationCompat.CallStyle.forIncomingCall(person))  TODO use inComingCall notifications (where supported based on Android OS version)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+            .setOngoing(true) // Can't be "dismissed" by user must action it
+            .setAutoCancel(false);
 
+        if (callerPerson != null) {
+            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent))
+                .setFullScreenIntent(fullScreenPendingIntent, true);
+        } else {
+            builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+        }
+
+        Log.d(TAG, "launching call notification via android NotificationManager notify()...");
         notificationManager.notify(this.notificationID, builder.build());
 
         if (this.timeoutRunnable != null) {
