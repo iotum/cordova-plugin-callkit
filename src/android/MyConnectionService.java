@@ -54,23 +54,39 @@ public class MyConnectionService extends ConnectionService {
                 throw new RuntimeException("Failed to parse payload JSON string: " + e);
             }
 
+            String callUUID = payload.optString("call_uuid", "");
+
             if (payload.optBoolean("dismiss", false)) {
-                Log.d(TAG, "received intent indicating call is dismissed");
-
-                // TODO: Close the corresponding connection and notification
+                Log.d(TAG, "received intent with payload.dismiss indicating call is dismissed, call_uuid: " + callUUID);
+                Connection conn = connectionMap.get(callUUID);
+                if (conn == null) {
+                    Log.e(TAG, "Cannot disconnect. No connection found with call_uuid: " + callUUID);
+                } else {
+                    if (conn.getState() == Connection.STATE_DISCONNECTED) {
+                        Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
+                    } else {
+                        Log.d(TAG, "Marking call as disconnected, call_uuid: " + callUUID);
+                        conn.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+                    }
+                }
             } else {
-                Log.d(TAG, "creating new incoming connection, associated with app PhoneAccount, from: " + from + " payload: " + payload);
-                TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+                if (connectionMap.get(callUUID) != null) {
+                    Log.d(TAG, "A connection is already created for call_uuid: " + callUUID);
+                } else {
+                    TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
-                context = (Context) this.getApplicationContext();
+                    context = (Context) this.getApplicationContext();
 
-                PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
+                    PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
 
-                Bundle callInfo = new Bundle();
-                callInfo.putString("payload", payloadString);
+                    Bundle callInfo = new Bundle();
+                    callInfo.putString("payload", payloadString);
 
-                // After this a new connection is created (see onCreateIncomingConnection below)
-                tm.addNewIncomingCall(phoneAccountHandle, callInfo);
+                    Log.d(TAG, "Adding new incoming connection, payload: " + payload);
+
+                    // After this a new connection is created (see onCreateIncomingConnection below)
+                    tm.addNewIncomingCall(phoneAccountHandle, callInfo);
+                }
             }
         }
 
@@ -99,7 +115,13 @@ public class MyConnectionService extends ConnectionService {
             throw new RuntimeException("Failed to parse payload string: " + e);
         }
 
-        String callUUID = payload.optString("call_uuid", Integer.toString(new Random().nextInt(1002) + 1));
+        String _callUUID = null;
+        try {
+            _callUUID = payload.getString("call_uuid");
+        } catch (JSONException e) {
+            throw new RuntimeException("onCreateIncomingConnection no call uuid provided for this connection");
+        }
+        final String callUUID = _callUUID;
 
         final CallNotification callNotification = new CallNotification(payloadString, context);
 
@@ -154,6 +176,7 @@ public class MyConnectionService extends ConnectionService {
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
 
                 if (callNotification != null) {
+                    Log.d(TAG,"Closing call notification for callUUID: " + callUUID);
                     callNotification.close();
                 }
             }
