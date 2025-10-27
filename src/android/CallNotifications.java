@@ -59,6 +59,7 @@ public class CallNotification {
         // Create answer intent
         Intent answerIntent = new Intent("CALL_ANSWER");
             answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -71,12 +72,6 @@ public class CallNotification {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Intent fullScreenIntent = new Intent(this.context, this.launchActivityClass);
-        PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                this.context, 0, fullScreenIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
         JSONObject payload = null;
         try {
             payload = new JSONObject(this.pushMessagePayload);
@@ -86,16 +81,6 @@ public class CallNotification {
 
         String callerName = payload.optString("from", "UNKNOWN");
 
-        Person callerPerson = null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            callerPerson = new Person.Builder()
-                    .setName(callerName)
-                    .setImportant(true)
-                    .build();
-        }
-
-        // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
-
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Incoming call")
             .setContentText(callerName)
@@ -103,12 +88,24 @@ public class CallNotification {
             .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setOngoing(true) // Can't be "dismissed" by user must action it
-            .setAutoCancel(false);
+            .setOngoing(true); // Can't be "dismissed" by user must action it
 
-        if (callerPerson != null) {
-            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent))
-                .setFullScreenIntent(fullScreenPendingIntent, true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Log.d(TAG, "Creating CallStyle.forIncomingCall style notification (as this is supported by the device)...");
+            Person callerPerson = new Person.Builder()
+                    .setName(callerName)
+                    .setImportant(true)
+                    .build();
+
+            // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
+            Intent fullScreenIntent = new Intent(this.context, this.launchActivityClass);
+            PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                    this.context, 0, fullScreenIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
+            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
+            builder.setFullScreenIntent(fullScreenPendingIntent, true);
         } else {
             builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
                     .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);

@@ -1,5 +1,6 @@
 package com.dmarc.cordovacall;
 
+import com.dmarc.cordovacall.CallActionReceiver;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
@@ -7,7 +8,9 @@ import org.json.JSONObject;
 
 import android.content.Intent;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
@@ -44,6 +47,12 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "onStartCommand called with intent, action: " + intentAction);
 
+        CallActionReceiver callActionReceiver = new CallActionReceiver();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("CALL_ANSWER");
+        intentFilter.addAction("CALL_DECLINE");
+        registerReceiver(callActionReceiver, intentFilter, RECEIVER_NOT_EXPORTED);
+
         if (intentAction.equals("INCOMING_CALL_INVITE")) {
             String from = intent.getStringExtra("from");
             String payloadString = intent.getStringExtra("payload");
@@ -66,8 +75,8 @@ public class MyConnectionService extends ConnectionService {
                     if (conn.getState() == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
                     } else {
-                        Log.d(TAG, "Marking call as disconnected, call_uuid: " + callUUID);
-                        conn.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+                        Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, call_uuid: " + callUUID);
+                        conn.onAbort();
                     }
                 }
             } else {
@@ -96,7 +105,7 @@ public class MyConnectionService extends ConnectionService {
             }
         }
 
-        return super.onStartCommand(intent, flags, startId);
+        return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
     private static Connection conn;
@@ -133,8 +142,7 @@ public class MyConnectionService extends ConnectionService {
             CallNotification callNotification;
 
             @Override
-            public void onShowIncomingCallUi() {
-                // TODO this should be invoked automatically for self-managed PhoneAccount connections, but its not....
+            public void onShowIncomingCallUi() { // Only for self managed connections
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.callNotification = new CallNotification(payloadString, context);
                 this.callNotification.show();
@@ -159,33 +167,44 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onReject() {
                 Log.d(TAG, "onReject, call_uuid: " + callUUID);
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.REJECTED);
-                this.setDisconnected(cause);
+
+                this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
                 this.destroy();
                 conn = null;
+
+                if (callNotification != null) {
+                    callNotification.close();
+                }
+
                 CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
-                super.onAbort();
+
+                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+                this.destroy();
+                conn = null;
+
+                if (callNotification != null) {
+                    callNotification.close();
+                }
             }
 
             @Override
             public void onDisconnect() {
-                Log.d(TAG, "onDissconnect, call_uuid: " + callUUID);
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
-                this.setDisconnected(cause);
+                Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
+
+                this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
                 this.destroy();
                 conn = null;
 
-                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
-
                 if (callNotification != null) {
-                    Log.d(TAG,"Closing call notification for callUUID: " + callUUID);
                     callNotification.close();
                 }
+
+                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
         };
 
