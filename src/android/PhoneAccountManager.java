@@ -29,7 +29,8 @@ public class PhoneAccountManager {
     public static PhoneAccount getPhoneAccount(Context context) {
         if (PhoneAccountManager.phoneAccount == null) {
             String appName = PhoneAccountManager.getApplicationName(context);
-            PhoneAccountManager.phoneAccount = new PhoneAccount.Builder(PhoneAccountManager.getPhoneAccountHandle(context), appName)
+            PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(context);
+            PhoneAccountManager.phoneAccount = new PhoneAccount.Builder(handle, appName)
                     .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
                     .build();
             TelecomManager tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
