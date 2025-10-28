@@ -194,11 +194,6 @@ public class CordovaCall extends CordovaPlugin {
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.get(eventType);
             callbackContextList.add(this.callbackContext);
             return true;
-        } else if (action.equals("setAppName")) {
-            String appName = args.getString(0);
-            throw new Error("setAppName() Not implemented - why is this needed?");
-            //this.callbackContext.success("App Name Changed Successfully");
-            //return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);
             int iconId = this.cordova.getActivity().getApplicationContext().getResources().getIdentifier(iconName, "drawable", this.cordova.getActivity().getPackageName());
@@ -228,14 +223,14 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
             if(realCallTo != null) {
-                cordova.getThreadPool().execute(new Runnable() {
-                    public void run() {
-                        callNumberPhonePermission();
-                    }
-                });
-                this.callbackContext.success("Call Successful");
+              cordova.getThreadPool().execute(new Runnable() {
+                  public void run() {
+                      callNumberPhonePermission();
+                  }
+              });
+              this.callbackContext.success("Call Successful");
             } else {
-                this.callbackContext.error("Call Failed. You need to enter a phone number.");
+              this.callbackContext.error("Call Failed. You need to enter a phone number.");
             }
             return true;
         } else if (action.equals("checkCallPermission")) {
