@@ -59,16 +59,18 @@ public class CallNotification {
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
 
         Intent answerIntent = new Intent(this.context, CallActionReceiver.class);
-            answerIntent.setAction("answerCall");
-            answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerIntent.setAction("answerCall");
+        answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerIntent.putExtra("notificationID", this.notificationID);
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
         Intent declineIntent = new Intent(this.context, CallActionReceiver.class);
-            declineIntent.setAction("declineCall");
-            declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        declineIntent.setAction("declineCall");
+        declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        declineIntent.putExtra("notificationID", this.notificationID);
         PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
                 this.context, 1, declineIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -84,12 +86,12 @@ public class CallNotification {
         String callerName = payload.optString("from", "UNKNOWN");
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Incoming call")
-            .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
+                .setContentTitle("Incoming call")
+                .setSmallIcon(android.R.drawable.ic_menu_call)
+                .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating CallStyle.forIncomingCall style notification (as this is supported by the device)...");

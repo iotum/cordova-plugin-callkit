@@ -123,19 +123,27 @@ public class MyConnectionService extends ConnectionService {
         return connectionMap.get(callUUID);
     }
 
-    public void showWebApp() {
+    public void showWebApp(String userAction, String payload) {
         Log.d(TAG, "showWebApp()");
-        // TODO: below line is occasionally crashing on clicking answer/decline on the notification:
-        //  "java.lang.RuntimeException: Unable to start receiver com.dmarc.cordovacall.CallActionReceiver: java.lang.NullPointerException: Attempt to invoke interface method 'androidx.appcompat.app.AppCompatActivity org.apache.cordova.CordovaInterface.getActivity()' on a null object reference"
-        //      Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-        //      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        //      CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+        PackageManager packageManager = context.getPackageManager();
 
-        // Below causes:
-        // NowBarCardStackView     com.android.systemui    "getTopCard topCard is null view size = 0"
-        PackageManager pm = this.context.getPackageManager();
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.setFlags(Intent.FLAG_FROM_BACKGROUND | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT);
+        Class mainActivity;
+        String  packageName = context.getPackageName();
+        Intent  launchIntent = packageManager.getLaunchIntentForPackage(packageName);
+        String  className = launchIntent.getComponent().getClassName();
+
+        // Lookup the MainActivity so we can launch an explicit intent to it without
+        // importing / assuming the package it came from (which differs by whitelabel)
+        try {
+            mainActivity = Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+
+        Intent intent = new Intent(context, mainActivity);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra("userAction", userAction); // So web app (when ready can process this) may need to use cordova-plugin-intent to read
+        intent.putExtra("payload", payload);
         this.startActivity(intent);
     }
 
@@ -165,7 +173,7 @@ public class MyConnectionService extends ConnectionService {
         Log.d(TAG, "onCreateIncomingConnection payload: " + payloadString);
         JSONObject payload;
         try {
-             payload = new JSONObject(payloadString);
+            payload = new JSONObject(payloadString);
         } catch (JSONException e) {
             throw new RuntimeException("Failed to parse payload string: " + e);
         }
@@ -193,8 +201,9 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onAnswer()");
                 this.setActive();
                 activeConnection = this;
-                showWebApp();
+                showWebApp("answerCall", payloadString);
 
+                // DELETE BELOW CODE WHEN FACETALK CAN READ VALUES PASSED BY INTENT
                 // Allow enough time for our app to open and register the answer callback
                 final Handler handler = new Handler();
                 handler.postDelayed(new Runnable() {
@@ -202,7 +211,7 @@ public class MyConnectionService extends ConnectionService {
                     public void run() {
                         CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
                     }
-                }, 1000);
+                }, 2000);
             }
 
             @Override
@@ -212,8 +221,18 @@ public class MyConnectionService extends ConnectionService {
                 if (callNotification != null) {
                     callNotification.close();
                 }
-                showWebApp(); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
-                CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
+
+                showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
+
+                // DELETE BELOW CODE WHEN FACETALK CAN READ VALUES PASSED BY INTENT
+                // Allow enough time for our app to open and register the answer callback
+                final Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
+                    }
+                }, 2000);
             }
 
             @Override
