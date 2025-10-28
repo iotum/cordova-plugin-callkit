@@ -34,6 +34,7 @@
                     <action android:name="android.telecom.ConnectionService" />
                 </intent-filter>
             </service>
+            <receiver android:name="com.dmarc.cordovacall.CallActionReceiver" />
         </config-file>
 
         <source-file src="src/android/CordovaCall.java" target-dir="src/com/dmarc/cordovacall" />
