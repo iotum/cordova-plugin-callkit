@@ -37,11 +37,11 @@
             <receiver android:name="com.dmarc.cordovacall.CallActionReceiver" />
         </config-file>
 
-        <source-file src="src/android/CallActionReceiver.java" target-dir="src/com/dmarc/CallActionReceiver" />
-        <source-file src="src/android/CallNotification.java" target-dir="src/com/dmarc/CallNotification" />
-        <source-file src="src/android/CordovaCall.java" target-dir="src/com/dmarc/CordovaCall" />
-        <source-file src="src/android/MyConnectionService.java" target-dir="src/com/dmarc/MyConnectionService" />
-        <source-file src="src/android/PhoneAccountManager.java" target-dir="src/com/dmarc/PhoneAccountManager" />
+        <source-file src="src/android/CallActionReceiver.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/CallNotification.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/CordovaCall.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/MyConnectionService.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/PhoneAccountManager.java" target-dir="src/com/dmarc/cordovacall" />
   </platform>
 
     <platform name="ios">
