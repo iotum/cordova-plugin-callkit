@@ -49,8 +49,8 @@ public class MyConnectionService extends ConnectionService {
 
         CallActionReceiver callActionReceiver = new CallActionReceiver();
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("CALL_ANSWER");
-        intentFilter.addAction("CALL_DECLINE");
+        intentFilter.addAction("rocks.app.callbridge.CALL_ANSWER");
+        intentFilter.addAction("rocks.app.callbridge.CALL_DECLINE");
         registerReceiver(callActionReceiver, intentFilter, RECEIVER_NOT_EXPORTED);
 
         if (intentAction.equals("INCOMING_CALL_INVITE")) {
@@ -110,6 +110,23 @@ public class MyConnectionService extends ConnectionService {
 
     private static Connection conn;
 
+    public static Connection getConnectionByPayload(String pushMessagePayload) {
+        JSONObject payload;
+        try {
+            payload = new JSONObject(pushMessagePayload);
+        } catch (JSONException e) {
+            throw new RuntimeException("Failed to parse payload JSON string: " + e);
+        }
+        String callUUID = payload.optString("call_uuid");
+        return connectionMap.get(callUUID);
+    }
+
+    public static void openApp() {
+        Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+    }
+
     public static Connection getConnection() {
         return conn;
     }
@@ -154,6 +171,8 @@ public class MyConnectionService extends ConnectionService {
 
                 this.setActive();
 
+                openApp();
+
                 // Allow enough time for our app to open and register the answer callback
                 final Handler handler = new Handler();
                 handler.postDelayed(new Runnable() {
@@ -171,6 +190,8 @@ public class MyConnectionService extends ConnectionService {
                 this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
                 this.destroy();
                 conn = null;
+
+                openApp(); // So that we can tell the web app to reject the call
 
                 if (callNotification != null) {
                     callNotification.close();

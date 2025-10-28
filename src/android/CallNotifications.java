@@ -56,16 +56,18 @@ public class CallNotification {
     public void show() {
         int timeout = 30000;
 
-        // Create answer intent
-        Intent answerIntent = new Intent("CALL_ANSWER");
-            answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
+
+        Intent answerIntent = new Intent(this.context, CallActionReceiver.class);
+            answerIntent.setAction("answerCall");
+            answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Intent declineIntent = new Intent("CALL_DECLINE");
+        Intent declineIntent = new Intent(this.context, CallActionReceiver.class);
+            declineIntent.setAction("declineCall");
             declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
         PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
                 this.context, 1, declineIntent,
@@ -83,7 +85,6 @@ public class CallNotification {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Incoming call")
-            .setContentText(callerName)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -107,6 +108,7 @@ public class CallNotification {
             builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
             builder.setFullScreenIntent(fullScreenPendingIntent, true);
         } else {
+            builder.setContentText(callerName);
             builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
                     .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
         }
@@ -129,6 +131,7 @@ public class CallNotification {
     }
 
     public void close() {
+        Log.d(TAG, "closing call notification");
         this.notificationManager.cancel(this.notificationID);
         if (this.timeoutRunnable != null) {
             this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
