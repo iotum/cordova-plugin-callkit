@@ -43,6 +43,7 @@ public class CordovaCall extends CordovaPlugin {
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
     static {
+        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("answer", new ArrayList<CallbackContext>());
         callbackContextMap.put("reject", new ArrayList<CallbackContext>());
         callbackContextMap.put("mute", new ArrayList<CallbackContext>());
@@ -61,6 +62,7 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     public static void emitEvent(String eventName, PluginResult result) {
+        Log.d(TAG, "emitEvent: " + eventName + " result " + result.toString());
         ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventName);
         for (final CallbackContext callbackContext : callbackContexts) {
             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
@@ -96,6 +98,7 @@ public class CordovaCall extends CordovaPlugin {
 
         this.tm = (TelecomManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
+        callbackContextMap.put("receiveCall",new ArrayList<CallbackContext>());
         callbackContextMap.put("answer",new ArrayList<CallbackContext>());
         callbackContextMap.put("reject",new ArrayList<CallbackContext>());
         callbackContextMap.put("mute",new ArrayList<CallbackContext>());
