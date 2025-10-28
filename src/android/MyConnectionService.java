@@ -6,9 +6,11 @@ import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.Bundle;
@@ -121,10 +123,20 @@ public class MyConnectionService extends ConnectionService {
         return connectionMap.get(callUUID);
     }
 
-    public static void openApp() {
-        Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+    public void showWebApp() {
+        Log.d(TAG, "showWebApp()");
+        // TODO: below line is occasionally crashing on clicking answer/decline on the notification:
+        //  "java.lang.RuntimeException: Unable to start receiver com.dmarc.cordovacall.CallActionReceiver: java.lang.NullPointerException: Attempt to invoke interface method 'androidx.appcompat.app.AppCompatActivity org.apache.cordova.CordovaInterface.getActivity()' on a null object reference"
+        //      Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
+        //      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        //      CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
+
+        // Below causes:
+        // NowBarCardStackView     com.android.systemui    "getTopCard topCard is null view size = 0"
+        PackageManager pm = this.context.getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.setFlags(Intent.FLAG_FROM_BACKGROUND | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT);
+        this.startActivity(intent);
     }
 
     public static Connection getConnection() {
@@ -181,7 +193,7 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onAnswer()");
                 this.setActive();
                 activeConnection = this;
-                openApp();
+                showWebApp();
 
                 // Allow enough time for our app to open and register the answer callback
                 final Handler handler = new Handler();
@@ -200,7 +212,7 @@ public class MyConnectionService extends ConnectionService {
                 if (callNotification != null) {
                     callNotification.close();
                 }
-                openApp(); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
+                showWebApp(); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
                 CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
