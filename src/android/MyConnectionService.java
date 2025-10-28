@@ -108,7 +108,7 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    private static Connection conn;
+    private static Connection activeConnection;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
@@ -128,11 +128,22 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
-        return conn;
+        return activeConnection;
     }
 
     public static void deinitConnection() {
-        conn = null;
+        activeConnection = null;
+    }
+
+    public static void disconnectConnection(String callUUID, int cause) {
+        Connection conn = connectionMap.get(callUUID);
+        if (activeConnection == conn) {
+            activeConnection = null;
+        }
+        if (conn != null) {
+            conn.setDisconnected(new DisconnectCause(cause));
+            conn.destroy();
+        }
     }
 
     @Override
@@ -168,9 +179,8 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
-
                 this.setActive();
-
+                activeConnection = this;
                 openApp();
 
                 // Allow enough time for our app to open and register the answer callback
@@ -186,28 +196,18 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onReject() {
                 Log.d(TAG, "onReject, call_uuid: " + callUUID);
-
-                this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
-                this.destroy();
-                conn = null;
-
-                openApp(); // So that we can tell the web app to reject the call
-
+                disconnectConnection(callUUID, DisconnectCause.REJECTED);
                 if (callNotification != null) {
                     callNotification.close();
                 }
-
+                openApp(); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
                 CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
-
-                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-                this.destroy();
-                conn = null;
-
+                disconnectConnection(callUUID, DisconnectCause.CANCELED);
                 if (callNotification != null) {
                     callNotification.close();
                 }
@@ -216,15 +216,10 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onDisconnect() {
                 Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
-
-                this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
-                this.destroy();
-                conn = null;
-
+                disconnectConnection(callUUID, DisconnectCause.LOCAL);
                 if (callNotification != null) {
                     callNotification.close();
                 }
-
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
         };
@@ -236,12 +231,12 @@ public class MyConnectionService extends ConnectionService {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
             connection.setStatusHints(statusHints);
         }
-        conn = connection;
-        CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         connectionMap.put(callUUID, connection);
 
         connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+
+        CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         return connection;
     }
@@ -277,7 +272,7 @@ public class MyConnectionService extends ConnectionService {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
                 this.destroy();
-                conn = null;
+                activeConnection = null;
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
 
@@ -303,7 +298,7 @@ public class MyConnectionService extends ConnectionService {
             connection.setStatusHints(statusHints);
         }
         connection.setDialing();
-        conn = connection;
+        activeConnection = connection;
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
         return connection;
     }
