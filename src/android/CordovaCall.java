@@ -45,7 +45,6 @@ public class CordovaCall extends CordovaPlugin {
     static {
         callbackContextMap.put("answer", new ArrayList<CallbackContext>());
         callbackContextMap.put("reject", new ArrayList<CallbackContext>());
-        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("mute", new ArrayList<CallbackContext>());
         callbackContextMap.put("unmute", new ArrayList<CallbackContext>());
         callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
@@ -99,9 +98,11 @@ public class CordovaCall extends CordovaPlugin {
 
         callbackContextMap.put("answer",new ArrayList<CallbackContext>());
         callbackContextMap.put("reject",new ArrayList<CallbackContext>());
+        callbackContextMap.put("mute",new ArrayList<CallbackContext>());
+        callbackContextMap.put("unmute",new ArrayList<CallbackContext>());
         callbackContextMap.put("hangup",new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall",new ArrayList<CallbackContext>());
-        callbackContextMap.put("receiveCall",new ArrayList<CallbackContext>());
+        callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
 
         instance = this;
     }
