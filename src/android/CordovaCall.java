@@ -109,7 +109,7 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
-        //this.checkCallPermission();
+        this.checkCallPermission();
     }
 
     @Override
@@ -118,7 +118,7 @@ public class CordovaCall extends CordovaPlugin {
         this.callbackContext = callbackContext;
         if (action.equals("receiveCall")) {
             Connection conn = MyConnectionService.getConnection();
-            if (conn != null) {
+            if(conn != null) {
                 if(conn.getState() == Connection.STATE_ACTIVE) {
                     this.callbackContext.error("You can't receive a call right now because you're already in a call");
                 } else {

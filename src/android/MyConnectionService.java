@@ -277,7 +277,7 @@ public class MyConnectionService extends ConnectionService {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request);
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
         String payloadString = requestExtras.getString("payload");
-        Log.d(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
+        Log.e(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
     }
 
     @Override
