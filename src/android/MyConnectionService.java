@@ -63,12 +63,7 @@ public class MyConnectionService extends ConnectionService {
 
                 // Allow enough time for our app to open and register the answer callback
                 final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
-                    }
-                }, 1000);
+                CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
