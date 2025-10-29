@@ -59,12 +59,13 @@ public class CordovaCall extends CordovaPlugin {
         return callbackContextMap;
     }
 
-    public static void emitEvent(String eventName, PluginResult result) {
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventName);
+    public static void emitEvent(String eventType, PluginResult result) {
+        Log.d(TAG, "emitEvent: " + eventType + " result " + result.toString());
+        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventType);
         if (callbackContexts.size() == 0) {
-            Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventName + " enqueuing message for later...");
+            Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
             HashMap event = new HashMap();
-            event.put("eventName", eventName);
+            event.put("eventType", eventType);
             event.put("result", result);
             enqueuedEvents.add(event);
         }
@@ -213,7 +214,7 @@ public class CordovaCall extends CordovaPlugin {
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.get(eventType);
             callbackContextList.add(callbackContext1);
             for (final HashMap event : enqueuedEvents) {
-                if (event.get("eventName") == eventType) {
+                if (event.get("eventType").equals(eventType)) {
                     Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
                     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                         public void run() {
@@ -224,7 +225,7 @@ public class CordovaCall extends CordovaPlugin {
                     });
                 }
             }
-            enqueuedEvents.removeIf(e -> e.get("eventName").equals(eventType));
+            enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
             return true;
         } else if (action.equals("setAppName")) {
             String appName = args.getString(0);
