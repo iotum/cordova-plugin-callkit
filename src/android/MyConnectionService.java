@@ -142,7 +142,7 @@ public class MyConnectionService extends ConnectionService {
 
         Intent intent = new Intent(context, mainActivity);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra("userAction", userAction); // So web app (when ready can process this) may need to use cordova-plugin-intent to read
+        intent.putExtra("userAction", userAction); // So web app (if desired) could use this to automatically answer/decline the call (can read the intent using cordova-plugin-intent)
         intent.putExtra("payload", payload);
         this.startActivity(intent);
     }
