@@ -29,6 +29,26 @@ public class MyConnectionService extends ConnectionService {
     private static HashMap<String, Boolean> connectionAddedMap = new HashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
     Context context;
 
+    private CallActionReceiver callActionReceiver;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        this.callActionReceiver = new CallActionReceiver();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("rocks.app.callbridge.CALL_ANSWER");
+        intentFilter.addAction("rocks.app.callbridge.CALL_DECLINE");
+        this.registerReceiver(this.callActionReceiver, intentFilter, RECEIVER_NOT_EXPORTED);
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        this.unregisterReceiver(this.callActionReceiver);
+    }
+
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
             Log.d(TAG, "onStartCommand called with no intent");
@@ -39,11 +59,7 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "onStartCommand called with intent, action: " + intentAction);
 
-        CallActionReceiver callActionReceiver = new CallActionReceiver();
-        IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("rocks.app.callbridge.CALL_ANSWER");
-        intentFilter.addAction("rocks.app.callbridge.CALL_DECLINE");
-        registerReceiver(callActionReceiver, intentFilter, RECEIVER_NOT_EXPORTED);
+
 
         if (intentAction.equals("INCOMING_CALL_INVITE")) {
             String from = intent.getStringExtra("from");
