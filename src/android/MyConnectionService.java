@@ -1,36 +1,26 @@
 package com.dmarc.cordovacall;
 
-import com.dmarc.cordovacall.CallActionReceiver;
-import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.content.ComponentName;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
-import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
 import android.telecom.DisconnectCause;
-import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
-
-import androidx.annotation.Nullable;
-
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Random;
 
 public class MyConnectionService extends ConnectionService {
 
