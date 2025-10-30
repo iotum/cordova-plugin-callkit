@@ -31,7 +31,6 @@ public class CallNotification {
     private Context context;
     private NotificationManager notificationManager;
     private Runnable timeoutRunnable;
-    private Class<Activity> launchActivityClass;
     private Handler timeoutHandler = new Handler();
 
     private static final String NOTIFICATION_CHANNEL_ID = "meetings";
@@ -40,14 +39,6 @@ public class CallNotification {
         this.pushMessagePayload = pushMessagePayload;
         this.notificationID = new Random().nextInt(100000) + 1; // Random int > 0 TODO: maybe derive from call UUID string
         this.context = context;
-
-        PackageManager packageManager = context.getPackageManager();
-
-        Intent launchIntent = new Intent(Intent.ACTION_MAIN);
-        launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-        ComponentName componentName = launchIntent.resolveActivity(packageManager);
-        this.launchActivityClass = (Class) componentName.getClass();
-
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
     }
 
@@ -99,7 +90,17 @@ public class CallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
-            Intent fullScreenIntent = new Intent(this.context, this.launchActivityClass);
+            PackageManager packageManager = context.getPackageManager();
+            String  packageName = context.getPackageName();
+            Intent  launchIntent = packageManager.getLaunchIntentForPackage(packageName);
+            Class mainActivity;
+            String  className = launchIntent.getComponent().getClassName();
+            try {
+                mainActivity = Class.forName(className);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+            Intent fullScreenIntent = new Intent(this.context, mainActivity);
             PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                     this.context, 0, fullScreenIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
