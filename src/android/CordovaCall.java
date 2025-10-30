@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
+import android.util.Log;
 
 public class CordovaCall extends CordovaPlugin {
 
