@@ -48,6 +48,7 @@
         <source-file src="src/android/CallActionReceiver.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/CallNotification.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/CordovaCall.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/IncomingCallActivity.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/MyConnectionService.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/PhoneAccountManager.java" target-dir="src/com/dmarc/cordovacall" />
   </platform>
