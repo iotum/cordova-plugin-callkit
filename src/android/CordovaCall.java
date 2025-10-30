@@ -52,6 +52,7 @@ public class CordovaCall extends CordovaPlugin {
         callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
     }
+    private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
     private static CordovaWebView cordovaWebView;
     private static Icon icon;
@@ -61,9 +62,16 @@ public class CordovaCall extends CordovaPlugin {
         return callbackContextMap;
     }
 
-    public static void emitEvent(String eventName, PluginResult result) {
-        Log.d(TAG, "emitEvent: " + eventName + " result " + result.toString());
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventName);
+    public static void emitEvent(String eventType, PluginResult result) {
+        Log.d(TAG, "emitEvent: " + eventType + " result " + result.toString());
+        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventType);
+        if (callbackContexts.size() == 0) {
+            Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
+            HashMap event = new HashMap();
+            event.put("eventType", eventType);
+            event.put("result", result);
+            enqueuedEvents.add(event);
+        }
         for (final CallbackContext callbackContext : callbackContexts) {
             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                 public void run() {
@@ -195,8 +203,22 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("registerEvent")) {
             String eventType = args.getString(0);
+            CallbackContext callbackContext1 = this.callbackContext;
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.get(eventType);
-            callbackContextList.add(this.callbackContext);
+            callbackContextList.add(callbackContext1);
+            for (final HashMap event : enqueuedEvents) {
+                if (event.get("eventType").equals(eventType)) {
+                    Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
+                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                        public void run() {
+                            PluginResult result = (PluginResult) event.get("result");
+                            result.setKeepCallback(true);
+                            callbackContext1.sendPluginResult(result);
+                        }
+                    });
+                }
+            }
+            enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
             return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);
