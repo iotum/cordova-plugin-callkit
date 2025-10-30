@@ -90,20 +90,12 @@ public class CallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
-            PackageManager packageManager = context.getPackageManager();
-            String  packageName = context.getPackageName();
-            Intent  launchIntent = packageManager.getLaunchIntentForPackage(packageName);
-            Class mainActivity;
-            String  className = launchIntent.getComponent().getClassName();
-            try {
-                mainActivity = Class.forName(className);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-            Intent fullScreenIntent = new Intent(this.context, mainActivity);
+            Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
+            fullScreenIntent.putExtra("callerName", callerName);
+            fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
             PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                     this.context, 0, fullScreenIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                    PendingIntent.FLAG_IMMUTABLE
             );
 
             builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));

@@ -27,6 +27,14 @@
         </config-file>
 
         <config-file parent="/manifest/application" target="AndroidManifest.xml">
+            <activity
+                android:name="com.dmarc.cordovacall.IncomingCallActivity"
+                android:showOnLockScreen="true"
+                android:turnScreenOn="true"
+                android:launchMode="singleTask"
+                android:exported="false"
+                android:theme="@style/Theme.AppCompat.NoActionBar"
+            />
             <service android:name="com.dmarc.cordovacall.MyConnectionService"
                      android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
                      android:exported="true">
