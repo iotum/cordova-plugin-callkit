@@ -34,7 +34,7 @@ public class CallNotification {
     private Class<Activity> launchActivityClass;
     private Handler timeoutHandler = new Handler();
 
-    private static final String NOTIFICATION_CHANNEL_ID = "call_notifications";
+    private static final String NOTIFICATION_CHANNEL_ID = "meetings";
 
     public CallNotification(String pushMessagePayload, Context context) {
         this.pushMessagePayload = pushMessagePayload;
@@ -49,8 +49,6 @@ public class CallNotification {
         this.launchActivityClass = (Class) componentName.getClass();
 
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-
-        this.createNotificationChannel();
     }
 
     public void show() {
@@ -138,18 +136,5 @@ public class CallNotification {
         if (this.timeoutRunnable != null) {
             this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
         }
-    }
-
-    private void createNotificationChannel() {
-        NotificationChannel channel = new NotificationChannel(
-                CallNotification.NOTIFICATION_CHANNEL_ID,
-                "Incoming Calls",
-                NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Notifications for incoming calls");
-        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), null);
-        channel.setVibrationPattern(new long[]{ 0, 1000, 500, 1000 });
-        channel.enableVibration(true);
-        this.notificationManager.createNotificationChannel(channel);
     }
 }
