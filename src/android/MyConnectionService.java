@@ -161,8 +161,10 @@ public class MyConnectionService extends ConnectionService {
             activeConnection = null;
         }
         if (conn != null) {
+            Log.d(TAG, "Disconnecting connection for callUUID: " + callUUID);
             conn.setDisconnected(new DisconnectCause(cause));
             conn.destroy();
+            connectionMap.remove(callUUID);
         }
     }
 
