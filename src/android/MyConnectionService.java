@@ -216,15 +216,7 @@ public class MyConnectionService extends ConnectionService {
 
                 showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
 
-                // DELETE BELOW CODE WHEN FACETALK CAN READ VALUES PASSED BY INTENT
-                // Allow enough time for our app to open and register the answer callback
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
-                    }
-                }, 2000);
+                CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
