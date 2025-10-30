@@ -107,7 +107,11 @@ public class CordovaCall extends CordovaPlugin {
         cordovaWebView = webView;
         super.initialize(cordova, webView);
 
-        this.tm = (TelecomManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+        Context context = cordova.getActivity().getApplicationContext();
+
+        PhoneAccountManager.getPhoneAccount(context); // Ensure PhoneAccount is created and registered if not already
+
+        this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
         callbackContextMap.put("receiveCall",new ArrayList<CallbackContext>());
         callbackContextMap.put("answer",new ArrayList<CallbackContext>());
