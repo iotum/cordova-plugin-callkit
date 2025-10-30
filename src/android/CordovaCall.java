@@ -184,10 +184,7 @@ public class CordovaCall extends CordovaPlugin {
             if(conn == null) {
                 this.callbackContext.error("No call exists for you to end");
             } else {
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
-                conn.setDisconnected(cause);
-                conn.destroy();
-                MyConnectionService.deinitConnection();
+                MyConnectionService.endActiveCall();
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {

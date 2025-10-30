@@ -110,7 +110,7 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    private static Connection activeConnection;
+    private static String activeConnectionUUID;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
@@ -148,23 +148,26 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
-        return activeConnection;
+        return connectionMap.get(activeConnectionUUID);
     }
 
-    public static void deinitConnection() {
-        activeConnection = null;
+    public static void endActiveCall() {
+        if (activeConnectionUUID != null) {
+            disconnectConnection(activeConnectionUUID, DisconnectCause.LOCAL);
+            activeConnectionUUID = null;
+        }
     }
 
     public static void disconnectConnection(String callUUID, int cause) {
         Connection conn = connectionMap.get(callUUID);
-        if (activeConnection == conn) {
-            activeConnection = null;
-        }
         if (conn != null) {
             Log.d(TAG, "Disconnecting connection for callUUID: " + callUUID);
             conn.setDisconnected(new DisconnectCause(cause));
             conn.destroy();
             connectionMap.remove(callUUID);
+        }
+        if (activeConnectionUUID.equals(callUUID)) {
+            activeConnectionUUID = null;
         }
     }
 
@@ -202,7 +205,8 @@ public class MyConnectionService extends ConnectionService {
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
                 this.setActive();
-                activeConnection = this;
+                activeConnectionUUID = callUUID;
+
                 showWebApp("answerCall", payloadString);
 
                 CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
@@ -289,7 +293,7 @@ public class MyConnectionService extends ConnectionService {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
                 this.destroy();
-                activeConnection = null;
+                activeConnectionUUID = null;
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
 
@@ -315,7 +319,6 @@ public class MyConnectionService extends ConnectionService {
             connection.setStatusHints(statusHints);
         }
         connection.setDialing();
-        activeConnection = connection;
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
         return connection;
     }
