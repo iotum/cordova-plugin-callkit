@@ -59,8 +59,6 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "onStartCommand called with intent, action: " + intentAction);
 
-
-
         if (intentAction.equals("INCOMING_CALL_INVITE")) {
             String from = intent.getStringExtra("from");
             String payloadString = intent.getStringExtra("payload");
