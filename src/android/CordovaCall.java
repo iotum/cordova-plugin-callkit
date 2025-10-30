@@ -6,6 +6,8 @@ import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 
+import android.app.Activity;
+import android.os.Build;
 import android.os.Bundle;
 import android.telecom.DisconnectCause;
 import android.telecom.PhoneAccount;
@@ -26,6 +28,7 @@ import java.util.HashMap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.util.Log;
+import android.view.WindowManager;
 
 public class CordovaCall extends CordovaPlugin {
 
@@ -114,6 +117,22 @@ public class CordovaCall extends CordovaPlugin {
         callbackContextMap.put("hangup",new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall",new ArrayList<CallbackContext>());
         callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
+
+        Activity activity = cordova.getActivity();
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    activity.setShowWhenLocked(true);
+                    activity.setTurnScreenOn(true);
+                } else {
+                    activity.getWindow().addFlags(
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    );
+                }
+            }
+        });
 
         instance = this;
     }
