@@ -78,8 +78,7 @@ public class CallNotification {
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
-                .setOngoing(true) // Can't be "dismissed" by the user, app will handle closing it
-                .setSound(this.ringtoneURI); // Legacy (before Android 8.0) new versions of android get sound from the notification channel
+                .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating CallStyle.forIncomingCall style notification (as this is supported by the device)...");
