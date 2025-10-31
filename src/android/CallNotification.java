@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.util.Log;
@@ -16,6 +17,7 @@ import androidx.core.app.Person;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.URI;
 import java.util.Random;
 
 
@@ -78,6 +80,7 @@ public class CallNotification {
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -129,6 +132,10 @@ public class CallNotification {
         }
     }
 
+    private Uri getRingtoneURI() {
+        return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+    }
+
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
                 CallNotification.NOTIFICATION_CHANNEL_ID,
@@ -136,7 +143,7 @@ public class CallNotification {
                 NotificationManager.IMPORTANCE_HIGH
         );
         channel.setDescription("Notifications for incoming calls");
-        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), null);
+        channel.setSound(this.getRingtoneURI(), null);
         channel.setVibrationPattern(new long[]{ 0, 1000, 500, 1000 });
         channel.enableVibration(true);
         this.notificationManager.createNotificationChannel(channel);
