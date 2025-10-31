@@ -27,9 +27,6 @@ public class IncomingCallActivity extends AppCompatActivity {
     public static final String EXTRA_CALLER_NAME = "callerName";
     public static final String EXTRA_MESSAGE_PAYLOAD = "pushMessagePayload";
 
-    public static final int NOTIFICATION_ID = 101;
-
-    private String callerName;
     private String pushMessagePayload;
 
     @Override
@@ -37,7 +34,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         Intent intent = this.getIntent();
-        this.callerName = intent.getStringExtra(EXTRA_CALLER_NAME);
+        String callerName = intent.getStringExtra(EXTRA_CALLER_NAME);
         this.pushMessagePayload = intent.getStringExtra(EXTRA_MESSAGE_PAYLOAD);
 
         // --- Activity Window Setup ---
@@ -63,7 +60,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         tvCallerName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
         tvCallerName.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        tvCallerName.setText(this.callerName != null ? this.callerName : "Unknown Caller");
+        tvCallerName.setText(callerName != null ? callerName : "Unknown Caller");
 
         RelativeLayout.LayoutParams callerNameParams = new RelativeLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -164,23 +161,24 @@ public class IncomingCallActivity extends AppCompatActivity {
     }
 
     private void onAnswerClicked() {
-        this.dismissNotification();
-        Connection conn = MyConnectionService.getConnectionByPayload(this.pushMessagePayload);
-        if (conn == null) {
-            Log.d(TAG, "onAnswerClicked: exiting connection is already terminated/gone");
-        } else {
-            conn.onAnswer(); // Will launch web app and tell it to answer the call
-        }
+        Log.d(TAG, "onAnswerClicked");
+
+        Intent answerIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
+        answerIntent.setAction("answerCall");
+        answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        this.sendBroadcast(answerIntent);
+
         this.finishAndRemoveTask();
     }
 
     private void onDeclineClicked() {
-        this.dismissNotification();
-        this.finishAndRemoveTask();
-    }
+        Log.d(TAG, "onDeclineClicked");
 
-    private void dismissNotification() {
-        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        notificationManager.cancel(NOTIFICATION_ID);
+        Intent declineIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
+        declineIntent.setAction("declineCall");
+        declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        this.sendBroadcast(declineIntent);
+
+        this.finishAndRemoveTask();
     }
 }

@@ -14,24 +14,20 @@ public class CallActionReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         Log.d(TAG, "onReceive, intent action: " + action);
+        String pushMessagePayload = intent.getStringExtra("pushMessagePayload");
 
-        this.closeNotification(context, intent);
-
-        Connection conn = MyConnectionService.getConnectionByPayload(intent.getStringExtra("pushMessagePayload"));
+        Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);
 
         if (conn != null) {
             if (action.equals("declineCall")) {
                 conn.onReject();
             } else if (action.equals("answerCall")) {
                 conn.onAnswer();
+            } else {
+                throw new RuntimeException("Invalid action: " + action);
             }
         } else {
-            Log.d(TAG, "Unable to action - connection no longer exists");
+            Log.d(TAG, "Exiting, connection no longer exists. pushMessagePayload: " + pushMessagePayload);
         }
-    }
-
-    private void closeNotification(Context context, Intent intent) {
-        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.cancel(intent.getIntExtra("notificationID", 0));
     }
 }
