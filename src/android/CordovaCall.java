@@ -110,15 +110,6 @@ public class CordovaCall extends CordovaPlugin {
 
         this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
-        callbackContextMap.put("receiveCall",new ArrayList<CallbackContext>());
-        callbackContextMap.put("answer",new ArrayList<CallbackContext>());
-        callbackContextMap.put("reject",new ArrayList<CallbackContext>());
-        callbackContextMap.put("mute",new ArrayList<CallbackContext>());
-        callbackContextMap.put("unmute",new ArrayList<CallbackContext>());
-        callbackContextMap.put("hangup",new ArrayList<CallbackContext>());
-        callbackContextMap.put("sendCall",new ArrayList<CallbackContext>());
-        callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
-
         Activity activity = cordova.getActivity();
         activity.runOnUiThread(new Runnable() {
             @Override
