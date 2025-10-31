@@ -112,7 +112,7 @@ public class MyConnectionService extends ConnectionService {
                         }
                         // ==== END TEMPORARY CODE ====
 
-                        Log.d(TAG, "Adding new incoming connection, payload: " + payload);
+                        Log.d(TAG, "Adding new incoming connection, callUUID: " + callUUID);
 
                         // After this a new connection is created (see onCreateIncomingConnection below)
                         tm.addNewIncomingCall(phoneAccountHandle, callInfo);
@@ -128,6 +128,7 @@ public class MyConnectionService extends ConnectionService {
     private static String activeConnectionUUID;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
+        Log.d(TAG, "getConnectionByPayload: " + pushMessagePayload + "    connectionMap: " + connectionMap);
         JSONObject payload;
         try {
             payload = new JSONObject(pushMessagePayload);
@@ -216,9 +217,18 @@ public class MyConnectionService extends ConnectionService {
                 this.callNotification.show();
             }
 
+            private void closeNotification() {
+                if (this.callNotification != null) {
+                    this.callNotification.close();
+                    this.callNotification = null;
+                }
+            }
+
             @Override
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
+                this.closeNotification();
+
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
@@ -230,10 +240,9 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onReject() {
                 Log.d(TAG, "onReject, call_uuid: " + callUUID);
+                this.closeNotification();
+
                 disconnectConnection(callUUID, DisconnectCause.REJECTED);
-                if (callNotification != null) {
-                    callNotification.close();
-                }
 
                 showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
 
@@ -243,19 +252,18 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
+                this.closeNotification();
+
                 disconnectConnection(callUUID, DisconnectCause.CANCELED);
-                if (callNotification != null) {
-                    callNotification.close();
-                }
             }
 
             @Override
             public void onDisconnect() {
                 Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
+                this.closeNotification();
+
                 disconnectConnection(callUUID, DisconnectCause.LOCAL);
-                if (callNotification != null) {
-                    callNotification.close();
-                }
+
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
         };
@@ -268,9 +276,9 @@ public class MyConnectionService extends ConnectionService {
             connection.setStatusHints(statusHints);
         }
 
-        connectionMap.put(callUUID, connection);
-
+        Log.d(TAG, "Created connection for callUUID: " + callUUID);
         connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+        connectionMap.put(callUUID, connection);
 
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
