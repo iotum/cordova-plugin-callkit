@@ -105,10 +105,7 @@ public class MyConnectionService extends ConnectionService {
                         // Delete this later once all issues causing lingering ringing calls are addressed
                         for (String key : connectionMap.keySet()) {
                             Log.d(TAG, "Lingering call found: " + key + " cleaning up to avoid violating max ringing calls");
-                            Connection con = connectionMap.get(key);
-                            con.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
-                            con.destroy();
-                            connectionMap.remove(key);
+                            disconnectConnection(key, DisconnectCause.LOCAL);
                         }
                         // ==== END TEMPORARY CODE ====
 
@@ -170,7 +167,6 @@ public class MyConnectionService extends ConnectionService {
     public static void endActiveCall() {
         if (activeConnectionUUID != null) {
             disconnectConnection(activeConnectionUUID, DisconnectCause.LOCAL);
-            activeConnectionUUID = null;
         }
     }
 
