@@ -101,6 +101,17 @@ public class MyConnectionService extends ConnectionService {
                         Bundle callInfo = new Bundle();
                         callInfo.putString("payload", payloadString);
 
+                        // ==== TEMPORARY CODE =====
+                        // Delete this later once all issues causing lingering ringing calls are addressed
+                        for (String key : connectionMap.keySet()) {
+                            Log.d(TAG, "Lingering call found: " + key + " cleaning up to avoid violating max ringing calls");
+                            Connection con = connectionMap.get(key);
+                            con.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+                            con.destroy();
+                            connectionMap.remove(key);
+                        }
+                        // ==== END TEMPORARY CODE ====
+
                         Log.d(TAG, "Adding new incoming connection, payload: " + payload);
 
                         // After this a new connection is created (see onCreateIncomingConnection below)
