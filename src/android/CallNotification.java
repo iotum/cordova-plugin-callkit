@@ -1,10 +1,12 @@
 package com.dmarc.cordovacall;
 
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.BitmapFactory;
+import android.media.RingtoneManager;
 import android.os.Build;
 import android.os.Handler;
 import android.util.Log;
@@ -27,13 +29,15 @@ public class CallNotification {
     private Runnable timeoutRunnable;
     private Handler timeoutHandler = new Handler();
 
-    private static final String NOTIFICATION_CHANNEL_ID = "meetings";
+    private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
     public CallNotification(String pushMessagePayload, Context context) {
         this.pushMessagePayload = pushMessagePayload;
         this.notificationID = new Random().nextInt(100000) + 1; // Random int > 0 TODO: maybe derive from call UUID string
         this.context = context;
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        this.createNotificationChannel();
     }
 
     public void show() {
@@ -74,7 +78,8 @@ public class CallNotification {
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
-                .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
+                .setOngoing(true) // Can't be "dismissed" by the user, app will handle closing it
+                .setSound(this.ringtoneURI); // Legacy (before Android 8.0) new versions of android get sound from the notification channel
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating CallStyle.forIncomingCall style notification (as this is supported by the device)...");
@@ -123,5 +128,18 @@ public class CallNotification {
         if (this.timeoutRunnable != null) {
             this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
         }
+    }
+
+    private void createNotificationChannel() {
+        NotificationChannel channel = new NotificationChannel(
+                CallNotification.NOTIFICATION_CHANNEL_ID,
+                "Incoming Calls",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Notifications for incoming calls");
+        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), null);
+        channel.setVibrationPattern(new long[]{ 0, 1000, 500, 1000 });
+        channel.enableVibration(true);
+        this.notificationManager.createNotificationChannel(channel);
     }
 }
