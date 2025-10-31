@@ -145,7 +145,7 @@ public class CallNotification {
                 "Incoming Calls",
                 NotificationManager.IMPORTANCE_HIGH
         );
-        channel.setDescription("Notifications for incoming calls");
+        channel.setDescription("Incoming call alerts");
         channel.setSound(this.getRingtoneURI(), null);
         channel.setVibrationPattern(new long[]{ 0, 1000, 500, 1000 });
         channel.enableVibration(true);
