@@ -1,9 +1,8 @@
 package com.dmarc.cordovacall;
 
-import android.app.NotificationManager;
+import android.app.ComponentCaller;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.GradientDrawable;
@@ -17,25 +16,21 @@ import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import org.json.JSONException;
+import org.json.JSONObject;
 
-import android.telecom.Connection;
-
+// Lock screen / full screen capable activity to display a screen with an answer/decline button.
+// Receives the "pushMessagePayload" as an intent extra. Reads and displays the caller name from that.
 public class IncomingCallActivity extends AppCompatActivity {
     private static final String TAG = "IncomingCallActivity";
 
-    public static final String EXTRA_CALLER_NAME = "callerName";
-    public static final String EXTRA_MESSAGE_PAYLOAD = "pushMessagePayload";
-
-    private String pushMessagePayload;
+    private int callerNameViewID;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        Intent intent = this.getIntent();
-        String callerName = intent.getStringExtra(EXTRA_CALLER_NAME);
-        this.pushMessagePayload = intent.getStringExtra(EXTRA_MESSAGE_PAYLOAD);
 
         // --- Activity Window Setup ---
         getWindow().addFlags(
@@ -55,12 +50,11 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         // --- Create Caller Name TextView ---
         TextView tvCallerName = new TextView(this);
-        tvCallerName.setId(View.generateViewId()); // Generate a unique ID
+        this.callerNameViewID = View.generateViewId();
+        tvCallerName.setId(this.callerNameViewID); // Generate a unique ID
         tvCallerName.setTextColor(Color.WHITE);
         tvCallerName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
         tvCallerName.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        tvCallerName.setText(callerName != null ? callerName : "Unknown Caller");
 
         RelativeLayout.LayoutParams callerNameParams = new RelativeLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -129,6 +123,36 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         // --- Set the root layout as the content view ---
         setContentView(rootLayout);
+
+        this.updateCallerNameView();
+    }
+
+    @Override
+    public void onNewIntent(@NonNull Intent intent, @NonNull ComponentCaller caller) {
+        super.onNewIntent(intent, caller);
+        this.setIntent(intent); // So that future calls to this.getIntent() return the new intent, and not the initial intent of the activity
+
+        this.updateCallerNameView();
+    }
+
+    private String getPushMessagePayload() {
+        Intent intent = this.getIntent();
+        return intent.getStringExtra("pushMessagePayload");
+    }
+
+    private void updateCallerNameView() {
+        String payload = this.getPushMessagePayload();
+
+        String callerName = "Unknown Caller";
+        try {
+            JSONObject payloadJSON = new JSONObject(payload);
+            callerName = payloadJSON.getString("from");
+        } catch (JSONException e) {
+            Log.e(TAG, "Unable to read caller name from payload: " + payload);
+        }
+
+        TextView tvCallerName = this.findViewById(this.callerNameViewID);
+        tvCallerName.setText(callerName);
     }
 
     /**
@@ -165,7 +189,7 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         Intent answerIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
         answerIntent.setAction("answerCall");
-        answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerIntent.putExtra("pushMessagePayload", this.getPushMessagePayload());
         this.sendBroadcast(answerIntent);
 
         this.finishAndRemoveTask();
@@ -176,7 +200,7 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         Intent declineIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
         declineIntent.setAction("declineCall");
-        declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        declineIntent.putExtra("pushMessagePayload", this.getPushMessagePayload());
         this.sendBroadcast(declineIntent);
 
         this.finishAndRemoveTask();
