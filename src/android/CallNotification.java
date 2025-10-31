@@ -136,6 +136,9 @@ public class CallNotification {
         return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
     }
 
+    // Intentional create the notification channel here (rather than in javascript via window.FirebasePlugin.createChannel)
+    // so that the users default ringtone can be referenced, and so that the channel is guaranteed to be established prior to the notification.
+    // The notification sound on > Android 8.0 comes from the notification channel.
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
                 CallNotification.NOTIFICATION_CHANNEL_ID,
