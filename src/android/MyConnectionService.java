@@ -202,6 +202,8 @@ public class MyConnectionService extends ConnectionService {
         }
         final String callUUID = _callUUID;
 
+        connectionAddedMap.remove(callUUID);
+
         final Connection connection = new Connection() {
             CallNotification callNotification;
 
