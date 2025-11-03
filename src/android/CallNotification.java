@@ -50,6 +50,7 @@ public class CallNotification {
         Intent answerIntent = new Intent(this.context, CallActionReceiver.class);
         answerIntent.setAction("answerCall");
         answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerIntent.putExtra("notificationID", this.notificationID);
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, answerIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -58,6 +59,7 @@ public class CallNotification {
         Intent declineIntent = new Intent(this.context, CallActionReceiver.class);
         declineIntent.setAction("declineCall");
         declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        declineIntent.putExtra("notificationID", this.notificationID);
         PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
                 this.context, 1, declineIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

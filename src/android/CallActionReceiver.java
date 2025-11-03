@@ -28,6 +28,14 @@ public class CallActionReceiver extends BroadcastReceiver {
             }
         } else {
             Log.d(TAG, "Exiting, connection no longer exists. pushMessagePayload: " + pushMessagePayload);
+            if (intent.hasExtra("notificationID")) {
+                // For safety ensure any associated notification is closed (avoids bad UX if the normal logic
+                // that closes the notification when the connection is disconnected fails/crashes/etc.)
+                int notificationID = intent.getIntExtra("notificationID", 0);
+                Log.e(TAG, "Closing orphaned notification, ID: " + notificationID);
+                NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                nm.cancel(notificationID);
+            }
         }
     }
 }
