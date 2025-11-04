@@ -104,7 +104,11 @@ public class MyConnectionService extends ConnectionService {
                         // Delete this later once all issues causing lingering ringing calls are addressed
                         for (String key : connectionMap.keySet()) {
                             Log.d(TAG, "Lingering call found: " + key + " cleaning up to avoid violating max ringing calls");
-                            disconnectConnection(key, DisconnectCause.LOCAL);
+                            Connection conn = connectionMap.get(key);
+                            if (conn != null) {
+                                conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+                            }
+                            connectionMap.remove(key);
                         }
                         // ==== END TEMPORARY CODE ====
 
@@ -124,7 +128,6 @@ public class MyConnectionService extends ConnectionService {
     private static String activeConnectionUUID;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
-        Log.d(TAG, "getConnectionByPayload: " + pushMessagePayload + "    connectionMap: " + connectionMap);
         JSONObject payload;
         try {
             payload = new JSONObject(pushMessagePayload);
@@ -165,20 +168,8 @@ public class MyConnectionService extends ConnectionService {
 
     public static void endActiveCall() {
         if (activeConnectionUUID != null) {
-            disconnectConnection(activeConnectionUUID, DisconnectCause.LOCAL);
-        }
-    }
-
-    public static void disconnectConnection(String callUUID, int cause) {
-        Connection conn = connectionMap.get(callUUID);
-        if (conn != null) {
-            Log.d(TAG, "Disconnecting connection for callUUID: " + callUUID);
-            conn.setDisconnected(new DisconnectCause(cause));
-            conn.destroy();
-            connectionMap.remove(callUUID);
-        }
-        if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
-            activeConnectionUUID = null;
+            Connection conn = connectionMap.get(activeConnectionUUID);
+            conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
         }
     }
 
@@ -237,9 +228,7 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onReject() {
                 Log.d(TAG, "onReject, call_uuid: " + callUUID);
-                this.closeNotification();
-
-                disconnectConnection(callUUID, DisconnectCause.REJECTED);
+                this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
 
                 showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
 
@@ -249,19 +238,31 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
-                this.closeNotification();
-
-                disconnectConnection(callUUID, DisconnectCause.CANCELED);
+                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
             }
 
             @Override
             public void onDisconnect() {
                 Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
-                this.closeNotification();
-
-                disconnectConnection(callUUID, DisconnectCause.LOCAL);
-
+                this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
+            }
+
+            @Override
+            public void onStateChanged(int state) {
+                super.onStateChanged(state);
+                Log.d(TAG, "connection onStateChanged: " + state);
+
+                switch (state) {
+                    case Connection.STATE_DISCONNECTED:
+                        this.closeNotification();
+                        connectionMap.remove(callUUID);
+                        if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
+                            activeConnectionUUID = null;
+                        }
+                        this.destroy();
+                        break;
+                }
             }
         };
 
