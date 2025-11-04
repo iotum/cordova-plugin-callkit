@@ -59,7 +59,7 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "onStartCommand called with intent, action: " + intentAction);
 
-        if (intentAction.equals("INCOMING_CALL_INVITE")) {
+        if (intentAction != null && intentAction.equals("INCOMING_CALL_INVITE")) {
             String payloadString = intent.getStringExtra("payload");
 
             JSONObject payload = null;
