@@ -25,8 +25,8 @@ import java.util.HashMap;
 public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
-    private static HashMap<String, Connection> connectionMap = new HashMap<String, Connection>(); // Keys are call_uuid strings
-    private static HashMap<String, Boolean> connectionAddedMap = new HashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
+    private static final HashMap<String, Connection> connectionMap = new HashMap<String, Connection>(); // Keys are call_uuid strings
+    private static final HashMap<String, Boolean> connectionAddedMap = new HashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
     Context context;
 
     private CallActionReceiver callActionReceiver;
