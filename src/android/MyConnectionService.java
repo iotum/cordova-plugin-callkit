@@ -177,7 +177,7 @@ public class MyConnectionService extends ConnectionService {
             conn.destroy();
             connectionMap.remove(callUUID);
         }
-        if (activeConnectionUUID.equals(callUUID)) {
+        if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
             activeConnectionUUID = null;
         }
     }
