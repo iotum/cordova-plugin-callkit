@@ -278,7 +278,7 @@ public class CordovaCall extends CordovaPlugin {
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
             PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
-            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle);
+            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
             if(currentPhoneAccount.isEnabled()) {
                 if(pendingAction == "receiveCall") {
                     this.receiveCall();
