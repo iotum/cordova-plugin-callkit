@@ -263,6 +263,11 @@ public class MyConnectionService extends ConnectionService {
                         this.destroy();
                         break;
                 }
+
+                Intent intent = new Intent("connection_state_changed");
+                intent.putExtra("call_uuid", callUUID);
+                intent.putExtra("state", state);
+                context.sendBroadcast(intent);
             }
         };
 
