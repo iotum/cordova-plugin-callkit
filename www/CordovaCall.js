@@ -99,8 +99,8 @@ exports.checkCallPermission = function (error) {
   exec(null, error, "CordovaCall", "checkCallPermission", []);
 };
 
-exports.canUseFullScreenIntent = function () {
-  exec(null, null, "CordovaCall", "canUseFullScreenIntent", []);
+exports.canUseFullScreenIntent = function (success, error) {
+  exec(success, error, "CordovaCall", "canUseFullScreenIntent", []);
 };
 
 exports.openFullScreenIntentSettings = function () {
