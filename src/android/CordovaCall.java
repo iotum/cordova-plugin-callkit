@@ -1,5 +1,7 @@
 package com.dmarc.cordovacall;
 
+import static android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT;
+
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -7,8 +9,11 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 
 import android.app.Activity;
+import android.app.NotificationManager;
+import android.content.ActivityNotFoundException;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
@@ -26,6 +31,9 @@ import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.util.Log;
 import android.view.WindowManager;
+import android.widget.Toast;
+
+import androidx.core.app.NotificationCompat;
 
 public class CordovaCall extends CordovaPlugin {
 
@@ -270,6 +278,33 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("checkCallPermission")) {
             permissionCounter = 2;
             this.checkCallPermission();
+            return true;
+        } else if (action.equals("canUseFullScreenIntent")) {
+            NotificationManager nm = (NotificationManager) this.cordova.getActivity().getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean canUseFullScreenIntent = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                canUseFullScreenIntent = nm.canUseFullScreenIntent();
+            }
+            callbackContext.success(String.valueOf(canUseFullScreenIntent).toLowerCase());
+            return true;
+        } else if (action.equals("openFullScreenIntentSettings")) {
+            Activity activity = this.cordova.getActivity();
+            Intent intent = new Intent(
+                    Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                    Uri.parse("package:" + activity.getPackageName())
+            );
+            try {
+                activity.startActivity(intent);
+            } catch (ActivityNotFoundException e) {
+                // Handle the case where the specific settings page cannot be found
+                // (e.g., on some custom ROMs or older Android versions, though the action exists from Android 10+)
+                Toast.makeText(activity, "Settings page not found, please manually navigate to special app access.", Toast.LENGTH_LONG).show();
+                // Optional fallback to general app notification settings
+                Intent fallbackIntent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, activity.getPackageName())
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(fallbackIntent);
+            }
             return true;
         }
         return false;
