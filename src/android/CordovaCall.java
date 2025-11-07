@@ -285,7 +285,7 @@ public class CordovaCall extends CordovaPlugin {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 canUseFullScreenIntent = nm.canUseFullScreenIntent();
             }
-            callbackContext.success(String.valueOf(canUseFullScreenIntent).toLowerCase());
+            this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, canUseFullScreenIntent));
             return true;
         } else if (action.equals("openFullScreenIntentSettings")) {
             Activity activity = this.cordova.getActivity();
