@@ -305,6 +305,7 @@ public class CordovaCall extends CordovaPlugin {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 activity.startActivity(fallbackIntent);
             }
+            callbackContext.success();
             return true;
         }
         return false;

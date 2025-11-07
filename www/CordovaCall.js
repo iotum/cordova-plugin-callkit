@@ -103,8 +103,8 @@ exports.canUseFullScreenIntent = function (success, error) {
   exec(success, error, "CordovaCall", "canUseFullScreenIntent", []);
 };
 
-exports.openFullScreenIntentSettings = function () {
-  exec(null, null, "CordovaCall", "openFullScreenIntentSettings", []);
+exports.openFullScreenIntentSettings = function (success, error) {
+  exec(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
 };
 
 exports.dismissRingingCall = function (success) {
