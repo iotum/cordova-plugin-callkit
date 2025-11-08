@@ -1,20 +1,24 @@
 package com.dmarc.cordovacall;
 
+import static android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT;
+
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 
+import android.app.Activity;
+import android.app.NotificationManager;
+import android.content.ActivityNotFoundException;
+import android.os.Build;
 import android.os.Bundle;
-import android.telecom.DisconnectCause;
+import android.provider.Settings;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
-import android.content.ComponentName;
 import android.content.Intent;
 import android.content.Context;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.Manifest;
@@ -26,6 +30,10 @@ import java.util.HashMap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.util.Log;
+import android.view.WindowManager;
+import android.widget.Toast;
+
+import androidx.core.app.NotificationCompat;
 
 public class CordovaCall extends CordovaPlugin {
 
@@ -35,8 +43,7 @@ public class CordovaCall extends CordovaPlugin {
     private int permissionCounter = 0;
     private String pendingAction;
     private TelecomManager tm;
-    private PhoneAccountHandle handle;
-    private PhoneAccount phoneAccount;
+
     private CallbackContext callbackContext;
     private String appName;
     private String from;
@@ -44,11 +51,14 @@ public class CordovaCall extends CordovaPlugin {
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
     static {
+        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("answer", new ArrayList<CallbackContext>());
         callbackContextMap.put("reject", new ArrayList<CallbackContext>());
+        callbackContextMap.put("mute", new ArrayList<CallbackContext>());
+        callbackContextMap.put("unmute", new ArrayList<CallbackContext>());
         callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
-        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
+        callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
     }
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
@@ -84,8 +94,8 @@ public class CordovaCall extends CordovaPlugin {
         return cordovaInterface;
     }
 
-    public static CordovaWebView getWebView() { 
-        return cordovaWebView; 
+    public static CordovaWebView getWebView() {
+        return cordovaWebView;
     }
 
     public static Icon getIcon() {
@@ -101,28 +111,28 @@ public class CordovaCall extends CordovaPlugin {
         cordovaInterface = cordova;
         cordovaWebView = webView;
         super.initialize(cordova, webView);
-        appName = getApplicationName(this.cordova.getActivity().getApplicationContext());
-        handle = new PhoneAccountHandle(new ComponentName(this.cordova.getActivity().getApplicationContext(),MyConnectionService.class),appName);
-        tm = (TelecomManager)this.cordova.getActivity().getApplicationContext().getSystemService(this.cordova.getActivity().getApplicationContext().TELECOM_SERVICE);
-        // Removing fixes java.lang.IllegalArgumentException: Error, cannot change a self-managed phone account
-        // We do not want SELF_MANAGED as we want to use the default phone app
-        // if(android.os.Build.VERSION.SDK_INT >= 26) {
-        //   phoneAccount = new PhoneAccount.Builder(handle, appName)
-        //           .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
-        //           .build();
-        //   tm.registerPhoneAccount(phoneAccount);
-        // }
-        if(android.os.Build.VERSION.SDK_INT >= 23) {
-          phoneAccount = new PhoneAccount.Builder(handle, appName)
-                   .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER)
-                   .build();
-          tm.registerPhoneAccount(phoneAccount);          
-        }
-        callbackContextMap.put("answer",new ArrayList<CallbackContext>());
-        callbackContextMap.put("reject",new ArrayList<CallbackContext>());
-        callbackContextMap.put("hangup",new ArrayList<CallbackContext>());
-        callbackContextMap.put("sendCall",new ArrayList<CallbackContext>());
-        callbackContextMap.put("receiveCall",new ArrayList<CallbackContext>());
+
+        Context context = cordova.getActivity().getApplicationContext();
+
+        PhoneAccountManager.getPhoneAccount(context); // Ensure PhoneAccount is created and registered if not already
+
+        this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
+
+        Activity activity = cordova.getActivity();
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    activity.setShowWhenLocked(true);
+                    activity.setTurnScreenOn(true);
+                } else {
+                    activity.getWindow().addFlags(
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    );
+                }
+            }
+        });
 
         instance = this;
     }
@@ -135,6 +145,7 @@ public class CordovaCall extends CordovaPlugin {
 
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
+        Log.d(TAG, "executing action: " + action + " args: " + args);
         this.callbackContext = callbackContext;
         if (action.equals("receiveCall")) {
             Connection conn = MyConnectionService.getConnection();
@@ -192,10 +203,7 @@ public class CordovaCall extends CordovaPlugin {
             if(conn == null) {
                 this.callbackContext.error("No call exists for you to end");
             } else {
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
-                conn.setDisconnected(cause);
-                conn.destroy();
-                MyConnectionService.deinitConnection();
+                MyConnectionService.endActiveCall();
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {
@@ -227,25 +235,6 @@ public class CordovaCall extends CordovaPlugin {
                 }
             }
             enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
-            return true;
-        } else if (action.equals("setAppName")) {
-            String appName = args.getString(0);
-            handle = new PhoneAccountHandle(new ComponentName(this.cordova.getActivity().getApplicationContext(),MyConnectionService.class),appName);
-            // Removing fixes java.lang.IllegalArgumentException: Error, cannot change a self-managed phone account
-            // We do not want SELF_MANAGED as we want to use the default phone app
-            // if(android.os.Build.VERSION.SDK_INT >= 26) {
-            //   phoneAccount = new PhoneAccount.Builder(handle, appName)
-            //       .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
-            //       .build();
-            //   tm.registerPhoneAccount(phoneAccount);
-            // }
-            if(android.os.Build.VERSION.SDK_INT >= 23) {
-              phoneAccount = new PhoneAccount.Builder(handle, appName)
-                   .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER)
-                   .build();
-              tm.registerPhoneAccount(phoneAccount);
-            }
-            this.callbackContext.success("App Name Changed Successfully");
             return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);
@@ -290,13 +279,42 @@ public class CordovaCall extends CordovaPlugin {
             permissionCounter = 2;
             this.checkCallPermission();
             return true;
+        } else if (action.equals("canUseFullScreenIntent")) {
+            NotificationManager nm = (NotificationManager) this.cordova.getActivity().getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean canUseFullScreenIntent = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                canUseFullScreenIntent = nm.canUseFullScreenIntent();
+            }
+            this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, canUseFullScreenIntent));
+            return true;
+        } else if (action.equals("openFullScreenIntentSettings")) {
+            Activity activity = this.cordova.getActivity();
+            Intent intent = new Intent(
+                    Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                    Uri.parse("package:" + activity.getPackageName())
+            );
+            try {
+                activity.startActivity(intent);
+            } catch (ActivityNotFoundException e) {
+                // Handle the case where the specific settings page cannot be found
+                // (e.g., on some custom ROMs or older Android versions, though the action exists from Android 10+)
+                Toast.makeText(activity, "Settings page not found, please manually navigate to special app access.", Toast.LENGTH_LONG).show();
+                // Optional fallback to general app notification settings
+                Intent fallbackIntent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, activity.getPackageName())
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(fallbackIntent);
+            }
+            callbackContext.success();
+            return true;
         }
         return false;
     }
 
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
-            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle);
+            PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
+            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
             if(currentPhoneAccount.isEnabled()) {
                 if(pendingAction == "receiveCall") {
                     this.receiveCall();
@@ -319,7 +337,10 @@ public class CordovaCall extends CordovaPlugin {
     private void receiveCall() {
         Bundle callInfo = new Bundle();
         callInfo.putString("from",from);
+
+        PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
         tm.addNewIncomingCall(handle, callInfo);
+
         permissionCounter = 0;
         this.callbackContext.success("Incoming call successful");
 
@@ -333,7 +354,10 @@ public class CordovaCall extends CordovaPlugin {
         callInfoBundle.putString("to",to);
         Bundle callInfo = new Bundle();
         callInfo.putParcelable(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS,callInfoBundle);
+
+        PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
         callInfo.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle);
+
         callInfo.putBoolean(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, true);
         tm.placeCall(uri, callInfo);
         permissionCounter = 0;
@@ -367,11 +391,6 @@ public class CordovaCall extends CordovaPlugin {
         audioManager.setSpeakerphoneOn(false);
     }
 
-    public static String getApplicationName(Context context) {
-      ApplicationInfo applicationInfo = context.getApplicationInfo();
-      int stringId = applicationInfo.labelRes;
-      return stringId == 0 ? applicationInfo.nonLocalizedLabel.toString() : context.getString(stringId);
-    }
 
     protected void getCallPhonePermission() {
         cordova.requestPermission(this, CALL_PHONE_REQ_CODE, Manifest.permission.CALL_PHONE);
