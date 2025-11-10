@@ -95,8 +95,8 @@ exports.on = function (e, f) {
   exec(success, error, "CordovaCall", "registerEvent", [e]);
 };
 
-exports.checkCallPermission = function (error) {
-  exec(null, error, "CordovaCall", "checkCallPermission", []);
+exports.checkCallPermission = function (success, error) {
+  exec(success, error, "CordovaCall", "checkCallPermission", []);
 };
 
 exports.canUseFullScreenIntent = function (success, error) {
