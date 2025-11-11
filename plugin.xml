@@ -23,6 +23,7 @@
             <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
             <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/> <!-- needed by TelecomManager.getPhoneAccount() -->
             <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+            <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/> <!-- important for the CallStyle notifications created to be promotable -->
         </config-file>
 
         <config-file parent="/manifest/application" target="AndroidManifest.xml">
