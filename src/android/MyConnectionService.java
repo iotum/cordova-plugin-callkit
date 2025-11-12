@@ -100,6 +100,17 @@ public class MyConnectionService extends ConnectionService {
                         Bundle callInfo = new Bundle();
                         callInfo.putString("payload", payloadString);
 
+                        // Due to limitations of the current UI + to avoid violating the MAX_RINGING_CALLS,
+                        // which would cause addNewIncomingCall() to fail (event: onCreateIncomingCallFailed reason: MAX_RINGING_CALLS),
+                        // cleanup any existing ringing connections before hand.
+                        for (String key : connectionMap.keySet()) {
+                            Connection conn = connectionMap.get(key);
+                            if (conn.getState() == Connection.STATE_RINGING) {
+                                Log.d(TAG, "Disconnecting existing ringing connection for call_uuid: " + key + " before adding new call");
+                                conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL)); // Connection will later be destroyed + removed (see connection.onStateChanged).
+                            }
+                        }
+
                         Log.d(TAG, "Adding new incoming connection, callUUID: " + callUUID);
 
                         // After this a new connection is created (see onCreateIncomingConnection below)
