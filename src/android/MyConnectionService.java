@@ -100,9 +100,9 @@ public class MyConnectionService extends ConnectionService {
                         Bundle callInfo = new Bundle();
                         callInfo.putString("payload", payloadString);
 
-                        // Due to limitations of the current UI + to avoid violating the MAX_RINGING_CALLS,
-                        // which would cause addNewIncomingCall() to fail (event: onCreateIncomingCallFailed reason: MAX_RINGING_CALLS),
-                        // cleanup any existing ringing connections before hand.
+                        // For robustness (avoiding violating MAX_RINGING_CALLS) + due to limitations of the current UI:
+                        // End any existing or lingering ringing connections before calling addNewIncomingCall() as it would fail:
+                        // (event: onCreateIncomingCallFailed reason: MAX_RINGING_CALLS)
                         for (String key : connectionMap.keySet()) {
                             Connection conn = connectionMap.get(key);
                             if (conn.getState() == Connection.STATE_RINGING) {
