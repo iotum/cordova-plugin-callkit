@@ -10,6 +10,8 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.telecom.Connection;
+import android.telecom.DisconnectCause;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -116,6 +118,9 @@ public class CallNotification {
         this.timeoutRunnable = new Runnable() {
             @Override
             public void run() {
+                Log.d(TAG, "call missed, closing connection and call notification,");
+                Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);
+                conn.setDisconnected(new DisconnectCause(DisconnectCause.MISSED));
                 close();
             }
         };
