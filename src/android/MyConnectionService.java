@@ -189,6 +189,7 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onShowIncomingCallUi() { // Only for self managed connections
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
+                this.setRinging();
                 this.callNotification = new CallNotification(payloadString, context);
                 this.callNotification.show();
             }
