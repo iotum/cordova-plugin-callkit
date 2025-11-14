@@ -125,10 +125,10 @@ public class CallNotification {
                     this.context, 0, fullScreenIntent,
                     PendingIntent.FLAG_IMMUTABLE
             );
+            builder.setFullScreenIntent(fullScreenPendingIntent, true);
 
             if (style == style.INCOMING_CALL) {
                 builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
-                builder.setFullScreenIntent(fullScreenPendingIntent, true);
             } else if (style == style.ONGOING_CALL) {
                 builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
             }
