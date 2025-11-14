@@ -35,6 +35,11 @@ public class CallNotification {
 
     private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
+    public enum Style {
+        INCOMING_CALL,
+        ONGOING_CALL
+    }
+
     public CallNotification(String pushMessagePayload, Context context) {
         this.pushMessagePayload = pushMessagePayload;
         this.notificationID = new Random().nextInt(100000) + 1; // Random int > 0 TODO: maybe derive from call UUID string
@@ -44,7 +49,7 @@ public class CallNotification {
         this.createNotificationChannel();
     }
 
-    public void show() {
+    public void show(Style style) {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -67,6 +72,15 @@ public class CallNotification {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
+        hangupIntent.setAction("hangUp");
+        hangupIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        hangupIntent.putExtra("notificationID", this.notificationID);
+        PendingIntent hangupPendingIntent = PendingIntent.getBroadcast(
+                this.context, 0, hangupIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
         JSONObject payload = null;
         try {
             payload = new JSONObject(this.pushMessagePayload);
@@ -76,8 +90,20 @@ public class CallNotification {
 
         String callerName = payload.optString("from", "UNKNOWN");
 
+        String contentTitle;
+        switch (style) {
+            case INCOMING_CALL:
+                contentTitle = "Incoming call";
+                break;
+            case ONGOING_CALL:
+                contentTitle = "Ongoing call";
+                break;
+            default:
+                throw new RuntimeException("No CallNotification contentTitle defined for style: " + style);
+        }
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Incoming call")
+                .setContentTitle(contentTitle)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -100,12 +126,21 @@ public class CallNotification {
                     PendingIntent.FLAG_IMMUTABLE
             );
 
-            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
-            builder.setFullScreenIntent(fullScreenPendingIntent, true);
+            if (style == style.INCOMING_CALL) {
+                builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
+                builder.setFullScreenIntent(fullScreenPendingIntent, true);
+            } else if (style == style.ONGOING_CALL) {
+                builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
+            }
         } else {
             builder.setContentText(callerName);
-            builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
-                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+
+            if (style == Style.INCOMING_CALL) {
+                builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
+                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+            } else if (style == Style.ONGOING_CALL) {
+                builder.addAction(android.R.drawable.ic_menu_call, "Hang up", hangupPendingIntent);
+            }
         }
 
         Log.d(TAG, "launching call notification via android NotificationManager notify()...");

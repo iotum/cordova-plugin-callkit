@@ -202,7 +202,7 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
                 this.callNotification = new CallNotification(payloadString, context);
-                this.callNotification.show();
+                this.callNotification.show(CallNotification.Style.INCOMING_CALL);
             }
 
             private void closeNotification() {
@@ -215,8 +215,6 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
-                this.closeNotification();
-
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
@@ -254,6 +252,9 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "connection onStateChanged: " + state);
 
                 switch (state) {
+                    case Connection.STATE_ACTIVE:
+                        this.callNotification.show(CallNotification.Style.ONGOING_CALL);
+                        break;
                     case Connection.STATE_DISCONNECTED:
                         this.closeNotification();
                         connectionMap.remove(callUUID);
