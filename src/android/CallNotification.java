@@ -73,7 +73,7 @@ public class CallNotification {
         );
 
         Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
-        hangupIntent.setAction("hangUp");
+        hangupIntent.setAction("hangUpCall");
         hangupIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
         hangupIntent.putExtra("notificationID", this.notificationID);
         PendingIntent hangupPendingIntent = PendingIntent.getBroadcast(

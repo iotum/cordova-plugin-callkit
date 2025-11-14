@@ -23,6 +23,8 @@ public class CallActionReceiver extends BroadcastReceiver {
                 conn.onReject();
             } else if (action.equals("answerCall")) {
                 conn.onAnswer();
+            } else if (action.equals("hangUpCall")) {
+                conn.onDisconnect();
             } else {
                 throw new RuntimeException("Invalid action: " + action);
             }
