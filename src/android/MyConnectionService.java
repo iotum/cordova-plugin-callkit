@@ -20,13 +20,13 @@ import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
-    private static final HashMap<String, Connection> connectionMap = new HashMap<String, Connection>(); // Keys are call_uuid strings
-    private static final HashMap<String, Boolean> connectionAddedMap = new HashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
+    private static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are call_uuid strings
+    private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
     Context context;
 
     private CallActionReceiver callActionReceiver;
