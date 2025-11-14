@@ -5,6 +5,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -119,18 +120,48 @@ public class CallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
-            Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
-            fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-            PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                    this.context, 0, fullScreenIntent,
-                    PendingIntent.FLAG_IMMUTABLE
-            );
-            builder.setFullScreenIntent(fullScreenPendingIntent, true);
 
             if (style == style.INCOMING_CALL) {
                 builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
+
+                Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
+                fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                        this.context, 0, fullScreenIntent,
+                        PendingIntent.FLAG_IMMUTABLE
+                );
+                builder.setFullScreenIntent(fullScreenPendingIntent, true);
             } else if (style == style.ONGOING_CALL) {
                 builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
+
+                PackageManager packageManager = context.getPackageManager();
+
+                Class mainActivity;
+                String  packageName = context.getPackageName();
+                Intent  launchIntent = packageManager.getLaunchIntentForPackage(packageName);
+                String  className = launchIntent.getComponent().getClassName();
+                try {
+                    mainActivity = Class.forName(className);
+                } catch (ClassNotFoundException e) {
+                    throw new RuntimeException(e);
+                }
+
+                PendingIntent contentPendingIntent = PendingIntent.getActivity(
+                        context,
+                        0,
+                        launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                );
+
+                Intent fullScreenIntent = new Intent(this.context, mainActivity);
+                fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                        this.context, 0, fullScreenIntent,
+                        PendingIntent.FLAG_IMMUTABLE
+                );
+
+                builder.setContentIntent(contentPendingIntent);
+                builder.setFullScreenIntent(fullScreenPendingIntent, true);
             }
         } else {
             builder.setContentText(callerName);
