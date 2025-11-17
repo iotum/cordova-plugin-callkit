@@ -37,8 +37,6 @@ public class MyConnectionService extends ConnectionService {
 
         this.callActionReceiver = new CallActionReceiver();
         IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction("rocks.app.callbridge.CALL_ANSWER");
-        intentFilter.addAction("rocks.app.callbridge.CALL_DECLINE");
         this.registerReceiver(this.callActionReceiver, intentFilter, RECEIVER_NOT_EXPORTED);
     }
 
