@@ -1,14 +1,18 @@
 package com.dmarc.cordovacall;
 
+import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
+
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.Notification;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
@@ -202,13 +206,14 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
                 this.callNotification = new CallNotification(payloadString, context);
-                this.callNotification.show(CallNotification.Style.INCOMING_CALL);
-            }
+                Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
+                int notificationID = this.callNotification.getNotificationID();
 
-            private void closeNotification() {
-                if (this.callNotification != null) {
-                    this.callNotification.close();
-                    this.callNotification = null;
+                Log.d(TAG, "calling startForeground() for notification ID: " + notificationID);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(notificationID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+                } else {
+                    Log.e(TAG, "Unable to startForeground due to API level"); // TODO implement something
                 }
             }
 
@@ -219,7 +224,6 @@ public class MyConnectionService extends ConnectionService {
                 activeConnectionUUID = callUUID;
 
                 showWebApp("answerCall", payloadString);
-
                 CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
@@ -253,10 +257,16 @@ public class MyConnectionService extends ConnectionService {
 
                 switch (state) {
                     case Connection.STATE_ACTIVE:
-                        this.callNotification.show(CallNotification.Style.ONGOING_CALL);
+                        Notification notification = this.callNotification.build(CallNotification.Style.ONGOING_CALL);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            // Call startForeground again which allows for updating the associated notification
+                            startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+                        } else {
+                            Log.e(TAG, "Unable to startForeground() due to API Level"); // TODO implement something or raise min level
+                        }
                         break;
                     case Connection.STATE_DISCONNECTED:
-                        this.closeNotification();
+                        stopForeground(STOP_FOREGROUND_REMOVE); // Cancels the associated notification
                         connectionMap.remove(callUUID);
                         if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
                             activeConnectionUUID = null;
