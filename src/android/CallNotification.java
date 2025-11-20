@@ -132,27 +132,6 @@ public class CallNotification {
                 builder.setFullScreenIntent(fullScreenPendingIntent, true);
             } else if (style == style.ONGOING_CALL) {
                 builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
-
-                PackageManager packageManager = context.getPackageManager();
-
-                Class mainActivity;
-                String  packageName = context.getPackageName();
-                Intent  launchIntent = packageManager.getLaunchIntentForPackage(packageName);
-                String  className = launchIntent.getComponent().getClassName();
-                try {
-                    mainActivity = Class.forName(className);
-                } catch (ClassNotFoundException e) {
-                    throw new RuntimeException(e);
-                }
-
-                Intent fullScreenIntent = new Intent(this.context, mainActivity);
-                fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                        this.context, 0, fullScreenIntent,
-                        PendingIntent.FLAG_IMMUTABLE
-                );
-                
-                builder.setFullScreenIntent(fullScreenPendingIntent, true);
             }
         } else {
             builder.setContentText(callerName);
