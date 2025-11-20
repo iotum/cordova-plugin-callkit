@@ -46,6 +46,10 @@ public class CallNotification {
     }
 
     public Notification build(Style style) {
+        this.show(style, NotificationCompat.PRIORITY_HIGH);
+    }
+
+    public Notification build(Style style, int priority) {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -102,7 +106,7 @@ public class CallNotification {
                 .setContentTitle(contentTitle)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(priority)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
@@ -141,21 +145,13 @@ public class CallNotification {
                     throw new RuntimeException(e);
                 }
 
-                PendingIntent contentPendingIntent = PendingIntent.getActivity(
-                        context,
-                        0,
-                        launchIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-                );
-
                 Intent fullScreenIntent = new Intent(this.context, mainActivity);
                 fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
                 PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                         this.context, 0, fullScreenIntent,
                         PendingIntent.FLAG_IMMUTABLE
                 );
-
-                builder.setContentIntent(contentPendingIntent);
+                
                 builder.setFullScreenIntent(fullScreenPendingIntent, true);
             }
         } else {

@@ -24,6 +24,12 @@ import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
@@ -200,21 +206,44 @@ public class MyConnectionService extends ConnectionService {
 
         final Connection connection = new Connection() {
             CallNotification callNotification;
+            Runnable mainActivityChangeListener;
 
             @Override
             public void onShowIncomingCallUi() { // Only for self managed connections
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
+
+                this.mainActivityChangeListener = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (getState() == Connection.STATE_ACTIVE) {
+                            updateNotification();
+                        }
+                    }
+                };
+
+                CordovaCall.registerMainActivityStateChangeListener(this.mainActivityChangeListener);
+
                 this.callNotification = new CallNotification(payloadString, context);
                 Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
-                int notificationID = this.callNotification.getNotificationID();
 
-                Log.d(TAG, "calling startForeground() for notification ID: " + notificationID);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(notificationID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
-                } else {
-                    Log.e(TAG, "Unable to startForeground due to API level"); // TODO implement something
-                }
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+            }
+
+            private void updateNotification() {
+                CallNotification.Style style = this.getState() == Connection.STATE_RINGING ? CallNotification.Style.INCOMING_CALL : CallNotification.Style.ONGOING_CALL;
+
+                // Lowering the priority of the ongoing call notification (when the MainActivity is in the foreground)
+                // is done to prevent the notification from being displayed as a card that
+                // would overlap the top portion of the MainActivity.
+                boolean isInForeground = CordovaCall.isMainActivityInForeground();
+                int priority = (style == CallNotification.Style.ONGOING_CALL && isInForeground) ? NotificationCompat.PRIORITY_MIN : NotificationCompat.PRIORITY_HIGH;
+
+                Log.d(TAG, "updating notification style: " + style + " priority: " + priority);
+                Notification notification = this.callNotification.build(style, priority);
+
+                // Call startForeground again which allows for updating the associated notification of the same ID
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
             }
 
             @Override
@@ -257,19 +286,16 @@ public class MyConnectionService extends ConnectionService {
 
                 switch (state) {
                     case Connection.STATE_ACTIVE:
-                        Notification notification = this.callNotification.build(CallNotification.Style.ONGOING_CALL);
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            // Call startForeground again which allows for updating the associated notification
-                            startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
-                        } else {
-                            Log.e(TAG, "Unable to startForeground() due to API Level"); // TODO implement something or raise min level
-                        }
+                        updateNotification(); // Will update it to an "ongoing" CallStyle notification
                         break;
                     case Connection.STATE_DISCONNECTED:
                         stopForeground(STOP_FOREGROUND_REMOVE); // Cancels the associated notification
                         connectionMap.remove(callUUID);
                         if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
                             activeConnectionUUID = null;
+                        }
+                        if (this.mainActivityChangeListener != null) {
+                            CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
                         break;
