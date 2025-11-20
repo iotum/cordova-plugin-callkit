@@ -9,6 +9,7 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 
 import android.app.Activity;
+import android.app.Application;
 import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.os.Build;
@@ -33,6 +34,8 @@ import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 public class CordovaCall extends CordovaPlugin {
@@ -69,6 +72,9 @@ public class CordovaCall extends CordovaPlugin {
     public static HashMap<String, ArrayList<CallbackContext>> getCallbackContexts() {
         return callbackContextMap;
     }
+
+    private static boolean isMainActivityInForeground = false;
+    private static ArrayList<Runnable> mainActivityForegroundListeners = new ArrayList<Runnable>();
 
     public static void emitEvent(String eventType, PluginResult result) {
         Log.d(TAG, "emitEvent: " + eventType + " result " + result.toString());
@@ -137,10 +143,40 @@ public class CordovaCall extends CordovaPlugin {
         instance = this;
     }
 
+    public void setMainActivityInForegound(boolean isInForeground) {
+        isMainActivityInForeground = isInForeground;
+        // Notify all listeners:
+        for (final Runnable listener : mainActivityForegroundListeners) {
+            listener.run();
+        }
+    }
+
+    public static boolean isMainActivityInForeground() {
+        return isMainActivityInForeground;
+    }
+
+    public static void registerMainActivityStateChangeListener(Runnable runnable) {
+        if (!mainActivityForegroundListeners.contains(runnable)) {
+            mainActivityForegroundListeners.add(runnable);
+        }
+    }
+
+    public static void unregisterMainActivityStateChangeListener(Runnable runnable) {
+        mainActivityForegroundListeners.remove(runnable);
+    }
+
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
         this.checkCallPermission();
+        setMainActivityInForegound(true);
+    }
+
+    @Override
+    public void onPause(boolean multitasking) {
+        super.onPause(multitasking);
+        this.checkCallPermission();
+        setMainActivityInForegound(false);
     }
 
     @Override
@@ -265,14 +301,14 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
             if(realCallTo != null) {
-              cordova.getThreadPool().execute(new Runnable() {
-                  public void run() {
-                      callNumberPhonePermission();
-                  }
-              });
-              this.callbackContext.success("Call Successful");
+                cordova.getThreadPool().execute(new Runnable() {
+                    public void run() {
+                        callNumberPhonePermission();
+                    }
+                });
+                this.callbackContext.success("Call Successful");
             } else {
-              this.callbackContext.error("Call Failed. You need to enter a phone number.");
+                this.callbackContext.error("Call Failed. You need to enter a phone number.");
             }
             return true;
         } else if (action.equals("checkCallPermission")) {
@@ -402,10 +438,10 @@ public class CordovaCall extends CordovaPlugin {
 
     private void callNumber() {
         try {
-          Intent intent = new Intent(Intent.ACTION_CALL, Uri.fromParts("tel", realCallTo, null));
-          this.cordova.getActivity().getApplicationContext().startActivity(intent);
+            Intent intent = new Intent(Intent.ACTION_CALL, Uri.fromParts("tel", realCallTo, null));
+            this.cordova.getActivity().getApplicationContext().startActivity(intent);
         } catch(Exception e) {
-          this.callbackContext.error("Call Failed");
+            this.callbackContext.error("Call Failed");
         }
         this.callbackContext.success("Call Successful");
     }

@@ -20,6 +20,12 @@ import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
@@ -196,13 +202,39 @@ public class MyConnectionService extends ConnectionService {
 
         final Connection connection = new Connection() {
             CallNotification callNotification;
+            Runnable mainActivityChangeListener;
 
             @Override
             public void onShowIncomingCallUi() { // Only for self managed connections
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
+
+                this.mainActivityChangeListener = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (getState() == Connection.STATE_ACTIVE) {
+                            updateNotification();
+                        }
+                    }
+                };
+
+                CordovaCall.registerMainActivityStateChangeListener(this.mainActivityChangeListener);
+
                 this.callNotification = new CallNotification(payloadString, context);
                 this.callNotification.show(CallNotification.Style.INCOMING_CALL);
+            }
+
+            private void updateNotification() {
+                CallNotification.Style style = this.getState() == Connection.STATE_RINGING ? CallNotification.Style.INCOMING_CALL : CallNotification.Style.ONGOING_CALL;
+
+                // Lowering the priority of the ongoing call notification (when the MainActivity is in the foreground)
+                // is done to prevent the notification from being displayed as a card that
+                // would overlap the top portion of the MainActivity.
+                boolean isInForeground = CordovaCall.isMainActivityInForeground();
+                int priority = (style == CallNotification.Style.ONGOING_CALL && isInForeground) ? NotificationCompat.PRIORITY_MIN : NotificationCompat.PRIORITY_HIGH;
+
+                Log.d(TAG, "updating notification style: " + style + " priority: " + priority);
+                this.callNotification.show(style, priority);
             }
 
             private void closeNotification() {
@@ -253,13 +285,16 @@ public class MyConnectionService extends ConnectionService {
 
                 switch (state) {
                     case Connection.STATE_ACTIVE:
-                        this.callNotification.show(CallNotification.Style.ONGOING_CALL);
+                        updateNotification(); // Will update it to an "ongoing" CallStyle notification
                         break;
                     case Connection.STATE_DISCONNECTED:
                         this.closeNotification();
                         connectionMap.remove(callUUID);
                         if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
                             activeConnectionUUID = null;
+                        }
+                        if (this.mainActivityChangeListener != null) {
+                            CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
                         break;

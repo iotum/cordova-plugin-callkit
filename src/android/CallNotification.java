@@ -51,6 +51,10 @@ public class CallNotification {
     }
 
     public void show(Style style) {
+        this.show(style, NotificationCompat.PRIORITY_HIGH);
+    }
+
+    public void show(Style style, int priority) {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -107,7 +111,7 @@ public class CallNotification {
                 .setContentTitle(contentTitle)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(priority)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
