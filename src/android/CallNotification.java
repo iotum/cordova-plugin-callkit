@@ -150,21 +150,13 @@ public class CallNotification {
                     throw new RuntimeException(e);
                 }
 
-                PendingIntent contentPendingIntent = PendingIntent.getActivity(
-                        context,
-                        0,
-                        launchIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-                );
-
                 Intent fullScreenIntent = new Intent(this.context, mainActivity);
                 fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
                 PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                         this.context, 0, fullScreenIntent,
                         PendingIntent.FLAG_IMMUTABLE
                 );
-
-                builder.setContentIntent(contentPendingIntent);
+                
                 builder.setFullScreenIntent(fullScreenPendingIntent, true);
             }
         } else {
