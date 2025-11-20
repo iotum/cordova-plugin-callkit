@@ -1,5 +1,6 @@
 package com.dmarc.cordovacall;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -10,9 +11,6 @@ import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Handler;
-import android.telecom.Connection;
-import android.telecom.DisconnectCause;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -20,7 +18,6 @@ import androidx.core.app.Person;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.net.URI;
 import java.util.Random;
 
 
@@ -31,8 +28,6 @@ public class CallNotification {
     private Integer notificationID;
     private Context context;
     private NotificationManager notificationManager;
-    private Runnable timeoutRunnable;
-    private Handler timeoutHandler = new Handler();
 
     private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
@@ -50,11 +45,11 @@ public class CallNotification {
         this.createNotificationChannel();
     }
 
-    public void show(Style style) {
+    public Notification build(Style style) {
         this.show(style, NotificationCompat.PRIORITY_HIGH);
     }
 
-    public void show(Style style, int priority) {
+    public Notification build(Style style, int priority) {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -171,31 +166,13 @@ public class CallNotification {
         }
 
         Log.d(TAG, "launching call notification via android NotificationManager notify()...");
-        notificationManager.notify(this.notificationID, builder.build());
+        Notification notification = builder.build();
 
-        if (this.timeoutRunnable != null) {
-            this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
-        }
-
-        this.timeoutRunnable = new Runnable() {
-            @Override
-            public void run() {
-                Log.d(TAG, "call missed, closing connection and call notification,");
-                Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);
-                conn.setDisconnected(new DisconnectCause(DisconnectCause.MISSED));
-                close();
-            }
-        };
-
-        this.timeoutHandler.postDelayed(timeoutRunnable, timeout);
+        return notification;
     }
 
-    public void close() {
-        Log.d(TAG, "closing call notification");
-        this.notificationManager.cancel(this.notificationID);
-        if (this.timeoutRunnable != null) {
-            this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
-        }
+    public int getNotificationID() {
+        return this.notificationID;
     }
 
     private Uri getRingtoneURI() {

@@ -24,6 +24,11 @@
             <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/> <!-- needed by TelecomManager.getPhoneAccount() -->
             <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
             <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/> <!-- important for the CallStyle notifications created to be promotable -->
+        
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+            <!-- Permission for the "phoneCall" foreground service type (Required for Android 14+) -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
         </config-file>
 
         <config-file parent="/manifest/application" target="AndroidManifest.xml">
@@ -37,7 +42,9 @@
             />
             <service android:name="com.dmarc.cordovacall.MyConnectionService"
                      android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
-                     android:exported="true">
+                     android:exported="true"
+                     android:foregroundServiceType="phoneCall"
+            >
                 <intent-filter>
                     <action android:name="android.telecom.ConnectionService" />
                 </intent-filter>
