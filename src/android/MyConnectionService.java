@@ -1,14 +1,18 @@
 package com.dmarc.cordovacall;
 
+import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
+
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.Notification;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
+import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
@@ -20,6 +24,12 @@ import android.telecom.TelecomManager;
 import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
@@ -194,32 +204,53 @@ public class MyConnectionService extends ConnectionService {
 
         final Connection connection = new Connection() {
             CallNotification callNotification;
+            Runnable mainActivityChangeListener;
 
             @Override
             public void onShowIncomingCallUi() { // Only for self managed connections
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
+
+                this.mainActivityChangeListener = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (getState() == Connection.STATE_ACTIVE) {
+                            updateNotification();
+                        }
+                    }
+                };
+
+                CordovaCall.registerMainActivityStateChangeListener(this.mainActivityChangeListener);
+
                 this.callNotification = new CallNotification(payloadString, context);
-                this.callNotification.show();
+                Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
+
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
             }
 
-            private void closeNotification() {
-                if (this.callNotification != null) {
-                    this.callNotification.close();
-                    this.callNotification = null;
-                }
+            private void updateNotification() {
+                CallNotification.Style style = this.getState() == Connection.STATE_RINGING ? CallNotification.Style.INCOMING_CALL : CallNotification.Style.ONGOING_CALL;
+
+                // Lowering the priority of the ongoing call notification (when the MainActivity is in the foreground)
+                // is done to prevent the notification from being displayed as a card that
+                // would overlap the top portion of the MainActivity.
+                boolean isInForeground = CordovaCall.isMainActivityInForeground();
+                int priority = (style == CallNotification.Style.ONGOING_CALL && isInForeground) ? NotificationCompat.PRIORITY_MIN : NotificationCompat.PRIORITY_HIGH;
+
+                Log.d(TAG, "updating notification style: " + style + " priority: " + priority);
+                Notification notification = this.callNotification.build(style, priority);
+
+                // Call startForeground again which allows for updating the associated notification of the same ID
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
             }
 
             @Override
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
-                this.closeNotification();
-
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
                 showWebApp("answerCall", payloadString);
-
                 CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
@@ -252,11 +283,17 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "connection onStateChanged: " + state);
 
                 switch (state) {
+                    case Connection.STATE_ACTIVE:
+                        updateNotification(); // Will update it to an "ongoing" CallStyle notification
+                        break;
                     case Connection.STATE_DISCONNECTED:
-                        this.closeNotification();
+                        stopForeground(STOP_FOREGROUND_REMOVE); // Cancels the associated notification
                         connectionMap.remove(callUUID);
                         if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
                             activeConnectionUUID = null;
+                        }
+                        if (this.mainActivityChangeListener != null) {
+                            CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
                         break;

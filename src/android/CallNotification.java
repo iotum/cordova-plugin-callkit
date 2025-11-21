@@ -1,17 +1,16 @@
 package com.dmarc.cordovacall;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Handler;
-import android.telecom.Connection;
-import android.telecom.DisconnectCause;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -19,7 +18,6 @@ import androidx.core.app.Person;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.net.URI;
 import java.util.Random;
 
 
@@ -30,10 +28,13 @@ public class CallNotification {
     private Integer notificationID;
     private Context context;
     private NotificationManager notificationManager;
-    private Runnable timeoutRunnable;
-    private Handler timeoutHandler = new Handler();
 
     private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
+
+    public enum Style {
+        INCOMING_CALL,
+        ONGOING_CALL
+    }
 
     public CallNotification(String pushMessagePayload, Context context) {
         this.pushMessagePayload = pushMessagePayload;
@@ -44,7 +45,15 @@ public class CallNotification {
         this.createNotificationChannel();
     }
 
-    public void show() {
+    public Notification build(Style style) {
+<<<<<<< HEAD
+        this.build(style, NotificationCompat.PRIORITY_HIGH);
+=======
+        return this.build(style, NotificationCompat.PRIORITY_HIGH);
+>>>>>>> 5b75caa (wqFix: CallNotification.show() broken on merge with foreground service PR)
+    }
+
+    public Notification build(Style style, int priority) {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -67,6 +76,15 @@ public class CallNotification {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
+        hangupIntent.setAction("hangUpCall");
+        hangupIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        hangupIntent.putExtra("notificationID", this.notificationID);
+        PendingIntent hangupPendingIntent = PendingIntent.getBroadcast(
+                this.context, 0, hangupIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
         JSONObject payload = null;
         try {
             payload = new JSONObject(this.pushMessagePayload);
@@ -76,11 +94,23 @@ public class CallNotification {
 
         String callerName = payload.optString("from", "UNKNOWN");
 
+        String contentTitle;
+        switch (style) {
+            case INCOMING_CALL:
+                contentTitle = "Incoming call";
+                break;
+            case ONGOING_CALL:
+                contentTitle = "Ongoing call";
+                break;
+            default:
+                throw new RuntimeException("No CallNotification contentTitle defined for style: " + style);
+        }
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Incoming call")
+                .setContentTitle(contentTitle)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(priority)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
@@ -93,47 +123,39 @@ public class CallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
-            Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
-            fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-            PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                    this.context, 0, fullScreenIntent,
-                    PendingIntent.FLAG_IMMUTABLE
-            );
 
-            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
-            builder.setFullScreenIntent(fullScreenPendingIntent, true);
+            if (style == style.INCOMING_CALL) {
+                builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
+
+                Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
+                fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                        this.context, 0, fullScreenIntent,
+                        PendingIntent.FLAG_IMMUTABLE
+                );
+                builder.setFullScreenIntent(fullScreenPendingIntent, true);
+            } else if (style == style.ONGOING_CALL) {
+                builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
+            }
         } else {
             builder.setContentText(callerName);
-            builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
-                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+
+            if (style == Style.INCOMING_CALL) {
+                builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
+                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
+            } else if (style == Style.ONGOING_CALL) {
+                builder.addAction(android.R.drawable.ic_menu_call, "Hang up", hangupPendingIntent);
+            }
         }
 
         Log.d(TAG, "launching call notification via android NotificationManager notify()...");
-        notificationManager.notify(this.notificationID, builder.build());
+        Notification notification = builder.build();
 
-        if (this.timeoutRunnable != null) {
-            this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
-        }
-
-        this.timeoutRunnable = new Runnable() {
-            @Override
-            public void run() {
-                Log.d(TAG, "call missed, closing connection and call notification,");
-                Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);
-                conn.setDisconnected(new DisconnectCause(DisconnectCause.MISSED));
-                close();
-            }
-        };
-
-        this.timeoutHandler.postDelayed(timeoutRunnable, timeout);
+        return notification;
     }
 
-    public void close() {
-        Log.d(TAG, "closing call notification");
-        this.notificationManager.cancel(this.notificationID);
-        if (this.timeoutRunnable != null) {
-            this.timeoutHandler.removeCallbacks(this.timeoutRunnable);
-        }
+    public int getNotificationID() {
+        return this.notificationID;
     }
 
     private Uri getRingtoneURI() {
