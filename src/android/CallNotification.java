@@ -46,7 +46,11 @@ public class CallNotification {
     }
 
     public Notification build(Style style) {
+<<<<<<< HEAD
         this.build(style, NotificationCompat.PRIORITY_HIGH);
+=======
+        return this.build(style, NotificationCompat.PRIORITY_HIGH);
+>>>>>>> 5b75caa (wqFix: CallNotification.show() broken on merge with foreground service PR)
     }
 
     public Notification build(Style style, int priority) {
