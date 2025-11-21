@@ -46,7 +46,7 @@ public class CallNotification {
     }
 
     public Notification build(Style style) {
-        this.show(style, NotificationCompat.PRIORITY_HIGH);
+        this.build(style, NotificationCompat.PRIORITY_HIGH);
     }
 
     public Notification build(Style style, int priority) {
