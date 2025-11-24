@@ -125,9 +125,10 @@ public class CallNotification {
 
                 Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
                 fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+                fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                 PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                         this.context, 0, fullScreenIntent,
-                        PendingIntent.FLAG_IMMUTABLE
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_CANCEL_CURRENT
                 );
                 builder.setFullScreenIntent(fullScreenPendingIntent, true);
             } else if (style == style.ONGOING_CALL) {
