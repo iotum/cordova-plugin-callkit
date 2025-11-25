@@ -22,6 +22,8 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -69,11 +71,9 @@ public class IncomingCallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         IntentFilter filter = new IntentFilter("connection_state_changed");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            this.registerReceiver(this.callStateReceiver, filter, RECEIVER_NOT_EXPORTED);
-        } else {
-            this.registerReceiver(this.callStateReceiver, filter);
-        }
+
+        Log.d(TAG, "Registering callStateReciever");
+        LocalBroadcastManager.getInstance(this.getApplicationContext()).registerReceiver(callStateReceiver, filter);
 
         Connection connection = MyConnectionService.getConnectionByPayload(this.getPushMessagePayload());
         if (connection == null) {
@@ -183,6 +183,7 @@ public class IncomingCallActivity extends AppCompatActivity {
 
     protected void onDestroy() {
         super.onDestroy();
+        Log.d(TAG, "unregistering callStateReceiver");
         this.unregisterReceiver(this.callStateReceiver);
     }
 

@@ -29,6 +29,7 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -299,10 +300,11 @@ public class MyConnectionService extends ConnectionService {
                         break;
                 }
 
+                Log.d(TAG, "broadcasting connection_state_changed call_uuid: " + callUUID + " state: " + state);
                 Intent intent = new Intent("connection_state_changed");
                 intent.putExtra("call_uuid", callUUID);
                 intent.putExtra("state", state);
-                context.sendBroadcast(intent);
+                LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
             }
         };
 
