@@ -184,7 +184,7 @@ public class IncomingCallActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "unregistering callStateReceiver");
-        this.unregisterReceiver(this.callStateReceiver);
+        LocalBroadcastManager.getInstance(this.getApplicationContext()).unregisterReceiver(callStateReceiver);
     }
 
     @Override
