@@ -171,7 +171,7 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
-        return connectionMap.get(activeConnectionUUID);
+        return activeConnectionUUID != null ? connectionMap.get(activeConnectionUUID) : null;
     }
 
     public static void endActiveCall() {
