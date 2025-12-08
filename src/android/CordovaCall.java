@@ -353,24 +353,24 @@ public class CordovaCall extends CordovaPlugin {
                 if (this.pendingAction) {
                     this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
                 }
-                return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
-            }
-
-            PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
-            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
-            if(currentPhoneAccount.isEnabled()) {
-                if(pendingAction == "receiveCall") {
-                    this.receiveCall();
-                } else if(pendingAction == "sendCall") {
-                    this.sendCall();
-                }
+                // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
             } else {
-                if(permissionCounter == 2) {
-                    Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
-                    phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
+                PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
+                PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
+                if(currentPhoneAccount.isEnabled()) {
+                    if(pendingAction == "receiveCall") {
+                        this.receiveCall();
+                    } else if(pendingAction == "sendCall") {
+                        this.sendCall();
+                    }
                 } else {
-                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
+                    if(permissionCounter == 2) {
+                        Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
+                        phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
+                    } else {
+                        this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
+                    }
                 }
             }
         }
