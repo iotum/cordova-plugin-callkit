@@ -350,7 +350,7 @@ public class CordovaCall extends CordovaPlugin {
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
             if (CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
-                if (this.pendingAction) {
+                if (this.pendingAction != null) {
                     this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
                 }
                 return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
