@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 public class CordovaCall extends CordovaPlugin {
+    private static String READ_PHONE_NUMBERS_REQUIRED = "read_phone_numbers_permission_required";
 
     private static String TAG = "CordovaCall";
     public static final int CALL_PHONE_REQ_CODE = 0;
@@ -175,7 +176,6 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
-        this.checkCallPermission();
         setMainActivityInForegound(false);
     }
 
@@ -349,6 +349,13 @@ public class CordovaCall extends CordovaPlugin {
 
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
+            if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+                if (this.pendingAction != null) {
+                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
+                }
+                return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
+            }
+
             PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
             PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
             if(currentPhoneAccount.isEnabled()) {
@@ -363,7 +370,7 @@ public class CordovaCall extends CordovaPlugin {
                     phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
                 } else {
-                    this.callbackContext.error("You need to accept phone account permissions in order to send and receive calls");
+                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
                 }
             }
         }
