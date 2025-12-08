@@ -349,7 +349,7 @@ public class CordovaCall extends CordovaPlugin {
 
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
-            if (CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+            if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
                 if (this.pendingAction != null) {
                     this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
                 }
