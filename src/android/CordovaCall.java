@@ -176,7 +176,6 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
-        this.checkCallPermission();
         setMainActivityInForegound(false);
     }
 
