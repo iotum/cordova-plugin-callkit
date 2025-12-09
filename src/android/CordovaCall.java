@@ -169,6 +169,9 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
+        if (this.pendingAction != null && this.pendingAction.equals("sendCall")) {
+            this.checkCallPermission();
+        }
         setMainActivityInForegound(true);
     }
 
