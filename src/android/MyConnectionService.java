@@ -175,6 +175,9 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
+        // Note: if your currently in an active connection,
+        // calling TelecomManager.addCall() would fail
+        // Thus you can really have either (but not both) an active outgoing or an active incoming connection
         if (activeOutgoingConnection != null) {
             return activeOutgoingConnection;
         }
