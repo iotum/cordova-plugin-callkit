@@ -42,6 +42,10 @@ public class MyConnectionService extends ConnectionService {
 
     private CallActionReceiver callActionReceiver;
 
+    // TODO: store the outgoing connections in connectionMap() to do that we will need a call UUID which we could pass into the app through sendCall
+    // we can then get rid of this variable, and just always use connectionMap() + connection UUIDs to access both incoming and outgoing connections.
+    private static Connection activeOutgoingConnection;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -171,6 +175,12 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
+        // Note: if your currently in an active connection,
+        // calling TelecomManager.addCall() would fail
+        // Thus you can really have either (but not both) an active outgoing or an active incoming connection
+        if (activeOutgoingConnection != null) {
+            return activeOutgoingConnection;
+        }
         return activeConnectionUUID != null ? connectionMap.get(activeConnectionUUID) : null;
     }
 
@@ -178,6 +188,9 @@ public class MyConnectionService extends ConnectionService {
         if (activeConnectionUUID != null) {
             Connection conn = connectionMap.get(activeConnectionUUID);
             conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+        }
+        if (activeOutgoingConnection != null) {
+            activeOutgoingConnection.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
         }
     }
 
@@ -349,14 +362,13 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAbort() {
                 super.onAbort();
+                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
             }
 
             @Override
             public void onDisconnect() {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
-                this.destroy();
-                activeConnectionUUID = null;
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
 
@@ -372,6 +384,12 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
                         }
                     }, 500);
+                } else if (state == Connection.STATE_DISCONNECTED) {
+                    // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
+                    // Ensure the connection is destroyed, etc.
+                    this.destroy();
+                    activeOutgoingConnection = null;
+                    activeConnectionUUID = null;
                 }
             }
         };
@@ -383,6 +401,8 @@ public class MyConnectionService extends ConnectionService {
         }
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
+
+        activeOutgoingConnection = connection;
         return connection;
     }
 }
