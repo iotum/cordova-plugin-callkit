@@ -349,14 +349,13 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onAbort() {
                 super.onAbort();
+                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
             }
 
             @Override
             public void onDisconnect() {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
-                this.destroy();
-                activeConnectionUUID = null;
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
             }
 
@@ -372,6 +371,11 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
                         }
                     }, 500);
+                } else if (state == Connection.STATE_DISCONNECTED) {
+                    // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
+                    // Ensure the connection is destroyed + activeConnectionUUID is cleared
+                    this.destroy();
+                    activeConnectionUUID = null;
                 }
             }
         };
