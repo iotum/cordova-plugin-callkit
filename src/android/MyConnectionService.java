@@ -381,7 +381,7 @@ public class MyConnectionService extends ConnectionService {
                     }, 500);
                 } else if (state == Connection.STATE_DISCONNECTED) {
                     // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
-                    // Ensure the connection is destroyed + activeConnectionUUID is cleared
+                    // Ensure the connection is destroyed, etc.
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
