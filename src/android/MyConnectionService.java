@@ -42,6 +42,8 @@ public class MyConnectionService extends ConnectionService {
 
     private CallActionReceiver callActionReceiver;
 
+    // TODO: store the outgoing connections in connectionMap() to do that we will need a call UUID which we could pass into the app through sendCall
+    // we can then get rid of this variable, and just always use connectionMap() + connection UUIDs to access both incoming and outgoing connections.
     private static Connection activeOutgoingConnection;
 
     @Override
