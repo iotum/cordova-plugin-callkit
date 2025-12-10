@@ -42,6 +42,8 @@ public class MyConnectionService extends ConnectionService {
 
     private CallActionReceiver callActionReceiver;
 
+    private static Connection activeOutgoingConnection;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -171,6 +173,9 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static Connection getConnection() {
+        if (activeOutgoingConnection != null) {
+            return activeOutgoingConnection;
+        }
         return activeConnectionUUID != null ? connectionMap.get(activeConnectionUUID) : null;
     }
 
@@ -178,6 +183,9 @@ public class MyConnectionService extends ConnectionService {
         if (activeConnectionUUID != null) {
             Connection conn = connectionMap.get(activeConnectionUUID);
             conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+        }
+        if (activeOutgoingConnection != null) {
+            activeOutgoingConnection.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
         }
     }
 
@@ -387,6 +395,8 @@ public class MyConnectionService extends ConnectionService {
         }
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
+
+        activeOutgoingConnection = connection;
         return connection;
     }
 }
