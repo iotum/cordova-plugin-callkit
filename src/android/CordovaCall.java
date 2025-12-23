@@ -169,7 +169,7 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
-        if ("sendCall".equals(this.pendingAction)) {
+        if (this.pendingAction != null) {
             this.checkCallPermission();
         }
         setMainActivityInForegound(true);
@@ -199,6 +199,7 @@ public class CordovaCall extends CordovaPlugin {
                 pendingAction = "receiveCall";
                 this.checkCallPermission();
             }
+            pendingAction = null;
             return true;
         } else if (action.equals("sendCall")) {
             Connection conn = MyConnectionService.getConnection();
@@ -221,6 +222,7 @@ public class CordovaCall extends CordovaPlugin {
                     }
                 });*/
             }
+            pendingAction = null;
             return true;
         } else if (action.equals("connectCall")) {
             Connection conn = MyConnectionService.getConnection();
