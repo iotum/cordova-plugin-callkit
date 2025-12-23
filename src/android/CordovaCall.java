@@ -199,7 +199,6 @@ public class CordovaCall extends CordovaPlugin {
                 pendingAction = "receiveCall";
                 this.checkCallPermission();
             }
-            pendingAction = null;
             return true;
         } else if (action.equals("sendCall")) {
             Connection conn = MyConnectionService.getConnection();
@@ -222,7 +221,6 @@ public class CordovaCall extends CordovaPlugin {
                     }
                 });*/
             }
-            pendingAction = null;
             return true;
         } else if (action.equals("connectCall")) {
             Connection conn = MyConnectionService.getConnection();
