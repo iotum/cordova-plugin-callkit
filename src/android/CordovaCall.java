@@ -40,10 +40,13 @@ import androidx.core.app.NotificationCompat;
 
 public class CordovaCall extends CordovaPlugin {
     private static String READ_PHONE_NUMBERS_REQUIRED = "read_phone_numbers_permission_required";
+    private static String RECORD_AUDIO_REQUIRED = "record_audio_permission_required";
 
     private static String TAG = "CordovaCall";
     public static final int CALL_PHONE_REQ_CODE = 0;
     public static final int REAL_PHONE_CALL = 1;
+    public static final int RECORD_AUDIO_REQ_CODE = 2;
+
     private int permissionCounter = 0;
     private String pendingAction;
     private TelecomManager tm;
@@ -351,11 +354,18 @@ public class CordovaCall extends CordovaPlugin {
 
     private void checkCallPermission() {
         if(permissionCounter >= 1) {
+            // Check READ_PHONE_NUMBERS permission
             if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
                 if (this.pendingAction != null) {
                     this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
                 }
                 return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
+            }
+
+            // Check RECORD_AUDIO permission for microphone access
+            if (!CordovaCall.getCordova().hasPermission(Manifest.permission.RECORD_AUDIO)) {
+                cordova.requestPermission(this, RECORD_AUDIO_REQ_CODE, Manifest.permission.RECORD_AUDIO);
+                return; // Return here and continue in onRequestPermissionResult
             }
 
             PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
@@ -462,7 +472,11 @@ public class CordovaCall extends CordovaPlugin {
         {
             if(r == PackageManager.PERMISSION_DENIED)
             {
-                this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "CALL_PHONE Permission Denied"));
+                if(requestCode == RECORD_AUDIO_REQ_CODE) {
+                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, RECORD_AUDIO_REQUIRED));
+                } else {
+                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "CALL_PHONE Permission Denied"));
+                }
                 return;
             }
         }
@@ -473,6 +487,10 @@ public class CordovaCall extends CordovaPlugin {
                 break;
             case REAL_PHONE_CALL:
                 this.callNumber();
+                break;
+            case RECORD_AUDIO_REQ_CODE:
+                // Permission granted, continue with the call process
+                this.checkCallPermission();
                 break;
         }
     }
