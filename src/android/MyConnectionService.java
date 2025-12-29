@@ -400,9 +400,11 @@ public class MyConnectionService extends ConnectionService {
             connection.setStatusHints(statusHints);
         }
         connection.setDialing();
-        CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
 
         activeOutgoingConnection = connection;
+
+        CordovaCall.onOutgoingConnectionCreated();
+
         return connection;
     }
 }
