@@ -250,6 +250,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         Intent answerIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
         answerIntent.setAction("answerCall");
         answerIntent.putExtra("pushMessagePayload", this.getPushMessagePayload());
+        answerIntent.putExtra("fromLockscreen", true);
         this.sendBroadcast(answerIntent);
 
         this.finishAndRemoveTask();
@@ -261,6 +262,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         Intent declineIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
         declineIntent.setAction("declineCall");
         declineIntent.putExtra("pushMessagePayload", this.getPushMessagePayload());
+        declineIntent.putExtra("fromLockscreen", true);
         this.sendBroadcast(declineIntent);
 
         this.finishAndRemoveTask();
