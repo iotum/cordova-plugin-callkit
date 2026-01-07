@@ -429,7 +429,6 @@ public class MyConnectionService extends ConnectionService {
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
-        // Set capabilities to indicate this handles audio
         connection.setConnectionCapabilities(
                 Connection.CAPABILITY_MUTE | Connection.CAPABILITY_SUPPORT_HOLD
         );
