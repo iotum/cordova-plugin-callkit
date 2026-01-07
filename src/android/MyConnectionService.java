@@ -393,7 +393,7 @@ public class MyConnectionService extends ConnectionService {
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
-                    stopForeground(true); // Return ConnectionService to background and cancels notification
+                    stopForeground(true); // returns ConnectionService to the background and cancels notification
                 }
             }
         };
