@@ -7,11 +7,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
@@ -390,6 +393,7 @@ public class MyConnectionService extends ConnectionService {
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
+                    stopForeground(true); // Return ConnectionService to background and cancels notification
                 }
             }
         };
@@ -399,6 +403,43 @@ public class MyConnectionService extends ConnectionService {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
             connection.setStatusHints(statusHints);
         }
+
+        final String OUTGOING_CALL_NOTIFICATION_CHANNEL_ID = "outgoing_calls";
+
+        NotificationChannel serviceChannel = new NotificationChannel(
+                OUTGOING_CALL_NOTIFICATION_CHANNEL_ID,
+                "Outgoing Calls",
+                NotificationManager.IMPORTANCE_LOW
+        );
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.createNotificationChannel(serviceChannel);
+        }
+
+        final int OUTGOING_CALL_NOTIFICATION_ID = 1;
+        Notification notification = new NotificationCompat.Builder(this, OUTGOING_CALL_NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Outgoing Call")
+                .setContentText("Dialing...")
+                .setSmallIcon(android.R.drawable.sym_action_call) // Replace with your app's icon
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build();
+
+        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification);
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+
+        // Set capabilities to indicate this handles audio
+        connection.setConnectionCapabilities(
+                Connection.CAPABILITY_MUTE | Connection.CAPABILITY_SUPPORT_HOLD
+        );
+
+        // Specifically for self-managed connections (like most VoIP apps)
+        // This tells the system "I am handling the audio stream myself"
+        connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+        connection.setAudioModeIsVoip(true);
+
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
 
