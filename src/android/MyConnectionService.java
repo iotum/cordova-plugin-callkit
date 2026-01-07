@@ -393,7 +393,7 @@ public class MyConnectionService extends ConnectionService {
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
-                    stopForeground(true); // returns ConnectionService to the background and cancels notification
+                    stopForeground(true); // Return ConnectionService to background and cancels notification
                 }
             }
         };
@@ -429,8 +429,9 @@ public class MyConnectionService extends ConnectionService {
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
+        // Set capabilities to indicate this handles audio
         connection.setConnectionCapabilities(
-                Connection.CAPABILITY_MUTE | Connection.CAPABILITY_SUPPORT_HOLD
+                Connection.CAPABILITY_MUTE | Connection.CAPABILITY_HOLD | Connection.CAPABILITY_SUPPORT_HOLD
         );
 
         // Specifically for self-managed connections (like most VoIP apps)
