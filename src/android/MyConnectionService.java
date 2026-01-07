@@ -419,8 +419,7 @@ public class MyConnectionService extends ConnectionService {
         final int OUTGOING_CALL_NOTIFICATION_ID = 1;
         Notification notification = new NotificationCompat.Builder(this, OUTGOING_CALL_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Outgoing Call")
-                .setContentText("Dialing...")
-                .setSmallIcon(android.R.drawable.sym_action_call) // Replace with your app's icon
+                .setContentText("Active call")
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .build();
