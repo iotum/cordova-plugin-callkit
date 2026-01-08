@@ -425,7 +425,7 @@ public class MyConnectionService extends ConnectionService {
                 .setOngoing(true)
                 .build();
 
-        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification);
+        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
