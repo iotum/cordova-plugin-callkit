@@ -14,6 +14,8 @@ import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -34,6 +36,7 @@ import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
@@ -302,6 +305,7 @@ public class MyConnectionService extends ConnectionService {
                 switch (state) {
                     case Connection.STATE_ACTIVE:
                         updateNotification(); // Will update it to an "ongoing" CallStyle notification
+                        requestAudioFocus();
                         break;
                     case Connection.STATE_DISCONNECTED:
                         stopForeground(STOP_FOREGROUND_REMOVE); // Cancels the associated notification
@@ -313,6 +317,8 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
+
+                        abandonAudioFocus();
                         break;
                 }
 
@@ -387,6 +393,8 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
                         }
                     }, 500);
+                } else if (state == Connection.STATE_ACTIVE) {
+                    requestAudioFocus();
                 } else if (state == Connection.STATE_DISCONNECTED) {
                     // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
                     // Ensure the connection is destroyed, etc.
@@ -394,6 +402,8 @@ public class MyConnectionService extends ConnectionService {
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
                     stopForeground(true); // Return ConnectionService to background and cancels notification
+
+                    abandonAudioFocus();
                 }
             }
         };
@@ -444,5 +454,59 @@ public class MyConnectionService extends ConnectionService {
 
         activeOutgoingConnection = connection;
         return connection;
+    }
+
+    private AudioFocusRequest audioFocusRequest;
+
+    private void requestAudioFocus() {
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = focusChange -> {
+            // During a call, we IGNORE all requests to abandon focus.
+            // This is the key to preventing other apps from stealing the mic.
+
+            Map<Integer, String> focusChangeDescriptionMap = Map.of(
+                    AudioManager.AUDIOFOCUS_GAIN, "AUDIOFOCUS_GAIN",
+                    AudioManager.AUDIOFOCUS_LOSS, "AUDIOFOCUS_LOSS",
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, "AUDIOFOCUS_LOSS_TRANSIENT",
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK"
+            );
+
+            Log.d(TAG, "onAudioFocusChange, focusChange: " + focusChangeDescriptionMap.get(focusChange));
+        };
+
+        AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+
+         audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build();
+
+        Log.d(TAG, "Requesting audio focus...");
+        int requestResult = audioManager.requestAudioFocus(audioFocusRequest);
+
+        if (requestResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.d(TAG, "Audio focus request granted");
+        } else if (requestResult == AudioManager.AUDIOFOCUS_REQUEST_FAILED){
+            Log.e(TAG, "Audio focus request failed");
+        } else if (requestResult == AudioManager.AUDIOFOCUS_REQUEST_DELAYED) {
+            Log.e(TAG, "Audio focus request delayed");
+        } else {
+            Log.e(TAG, "Audio focus request result: " + requestResult);
+        }
+
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+    }
+
+    private void abandonAudioFocus() {
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioFocusRequest != null) {
+            Log.d(TAG, "Abandoning audio focus...");
+            audioManager.abandonAudioFocusRequest(audioFocusRequest);
+        }
+        audioManager.setMode(AudioManager.MODE_NORMAL);
     }
 }
