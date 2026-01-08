@@ -1,5 +1,6 @@
 package com.dmarc.cordovacall;
 
+import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
 import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
 
 import org.apache.cordova.PluginResult;
@@ -242,7 +243,7 @@ public class MyConnectionService extends ConnectionService {
                 this.callNotification = new CallNotification(payloadString, context);
                 Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
 
-                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
             }
 
             private void updateNotification() {
@@ -258,7 +259,7 @@ public class MyConnectionService extends ConnectionService {
                 Notification notification = this.callNotification.build(style, priority);
 
                 // Call startForeground again which allows for updating the associated notification of the same ID
-                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
             }
 
             @Override
@@ -425,7 +426,7 @@ public class MyConnectionService extends ConnectionService {
                 .setOngoing(true)
                 .build();
 
-        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
