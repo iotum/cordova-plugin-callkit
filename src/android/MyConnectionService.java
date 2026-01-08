@@ -420,6 +420,7 @@ public class MyConnectionService extends ConnectionService {
         Notification notification = new NotificationCompat.Builder(this, OUTGOING_CALL_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Outgoing Call")
                 .setContentText("Active call")
+                .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .build();
