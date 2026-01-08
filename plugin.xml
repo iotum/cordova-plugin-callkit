@@ -29,6 +29,7 @@
 
             <!-- Permission for the "phoneCall" foreground service type (Required for Android 14+) -->
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
         </config-file>
 
         <config-file parent="/manifest/application" target="AndroidManifest.xml">
@@ -43,7 +44,7 @@
             <service android:name="com.dmarc.cordovacall.MyConnectionService"
                      android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
                      android:exported="true"
-                     android:foregroundServiceType="phoneCall"
+                     android:foregroundServiceType="phoneCall|microphone"
             >
                 <intent-filter>
                     <action android:name="android.telecom.ConnectionService" />
