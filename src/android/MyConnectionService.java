@@ -420,11 +420,12 @@ public class MyConnectionService extends ConnectionService {
         Notification notification = new NotificationCompat.Builder(this, OUTGOING_CALL_NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Outgoing Call")
                 .setContentText("Active call")
+                .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .build();
 
-        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification);
+        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
