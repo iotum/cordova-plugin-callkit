@@ -268,6 +268,9 @@ public class MyConnectionService extends ConnectionService {
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
+                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+
                 showWebApp("answerCall", payloadString);
                 CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
             }
@@ -314,6 +317,9 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
+
+                        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                        audioManager.setMode(AudioManager.MODE_NORMAL);
                         break;
                 }
 
@@ -395,6 +401,9 @@ public class MyConnectionService extends ConnectionService {
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
                     stopForeground(true); // Return ConnectionService to background and cancels notification
+
+                    AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    audioManager.setMode(AudioManager.MODE_NORMAL);
                 }
             }
         };
