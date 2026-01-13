@@ -15,6 +15,7 @@ import android.content.ActivityNotFoundException;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.telecom.CallAudioState;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
@@ -297,11 +298,9 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("speakerOn")) {
             this.speakerOn();
-            this.callbackContext.success("Speakerphone is on");
             return true;
         } else if (action.equals("speakerOff")) {
             this.speakerOff();
-            this.callbackContext.success("Speakerphone is off");
             return true;
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
@@ -437,15 +436,22 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void speakerOn() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setSpeakerphoneOn(true);
+        this.setConnectionAudioRoute(CallAudioState.ROUTE_SPEAKER);
     }
 
     private void speakerOff() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setSpeakerphoneOn(false);
+        this.setConnectionAudioRoute(CallAudioState.ROUTE_EARPIECE);
     }
 
+    private void setConnectionAudioRoute(int route) {
+        Connection conn = MyConnectionService.getConnection();
+        if (conn != null) {
+            conn.setAudioRoute(route);
+            this.callbackContext.success("Connection audio route changed to: " + route);
+        } else {
+            this.callbackContext.error("No active connection");
+        }
+    }
 
     protected void getCallPhonePermission() {
         cordova.requestPermission(this, CALL_PHONE_REQ_CODE, Manifest.permission.CALL_PHONE);
