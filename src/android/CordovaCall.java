@@ -15,6 +15,7 @@ import android.content.ActivityNotFoundException;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.telecom.CallAudioState;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
@@ -437,13 +438,21 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void speakerOn() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setSpeakerphoneOn(true);
+        Connection conn = MyConnectionService.getConnection();
+        if (conn != null) {
+            conn.setAudioRoute(CallAudioState.ROUTE_SPEAKER);
+        } else {
+            this.callbackContext.error("No active connection");
+        }
     }
 
     private void speakerOff() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setSpeakerphoneOn(false);
+        Connection conn = MyConnectionService.getConnection();
+        if (conn != null) {
+            conn.setAudioRoute(CallAudioState.ROUTE_EARPIECE);
+        } else {
+            this.callbackContext.error("No active connection");
+        }
     }
 
 
