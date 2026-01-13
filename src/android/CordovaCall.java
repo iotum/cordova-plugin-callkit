@@ -298,11 +298,9 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("speakerOn")) {
             this.speakerOn();
-            this.callbackContext.success("Speakerphone is on");
             return true;
         } else if (action.equals("speakerOff")) {
             this.speakerOff();
-            this.callbackContext.success("Speakerphone is off");
             return true;
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
@@ -438,23 +436,22 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void speakerOn() {
-        Connection conn = MyConnectionService.getConnection();
-        if (conn != null) {
-            conn.setAudioRoute(CallAudioState.ROUTE_SPEAKER);
-        } else {
-            this.callbackContext.error("No active connection");
-        }
+        this.setConnectionAudioRoute(CallAudioState.ROUTE_SPEAKER);
     }
 
     private void speakerOff() {
+        this.setConnectionAudioRoute(CallAudioState.ROUTE_EARPIECE);
+    }
+
+    private void setConnectionAudioRoute(int route) {
         Connection conn = MyConnectionService.getConnection();
         if (conn != null) {
-            conn.setAudioRoute(CallAudioState.ROUTE_EARPIECE);
+            conn.setAudioRoute(route);
+            this.callbackContext.success("Connection audio route changed to: " + route);
         } else {
             this.callbackContext.error("No active connection");
         }
     }
-
 
     protected void getCallPhonePermission() {
         cordova.requestPermission(this, CALL_PHONE_REQ_CODE, Manifest.permission.CALL_PHONE);
