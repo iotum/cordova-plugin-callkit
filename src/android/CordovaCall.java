@@ -42,14 +42,17 @@ import androidx.core.app.NotificationCompat;
 public class CordovaCall extends CordovaPlugin {
     private static String READ_PHONE_NUMBERS_REQUIRED = "read_phone_numbers_permission_required";
     private static String RECORD_AUDIO_REQUIRED = "record_audio_permission_required";
+    private static String CAMERA_PERMISSION_REQUIRED = "camera_permission_required";
 
     private static String TAG = "CordovaCall";
     public static final int CALL_PHONE_REQ_CODE = 0;
     public static final int REAL_PHONE_CALL = 1;
     public static final int RECORD_AUDIO_REQ_CODE = 2;
+    public static final int CAMERA_REQ_CODE = 3;
 
     private int permissionCounter = 0;
     private String pendingAction;
+    private JSONArray pendingActionArgs;
     private TelecomManager tm;
 
     private CallbackContext callbackContext;
@@ -201,6 +204,7 @@ public class CordovaCall extends CordovaPlugin {
                 from = args.getString(0);
                 permissionCounter = 2;
                 pendingAction = "receiveCall";
+                pendingActionArgs = args;
                 this.checkCallPermission();
             }
             return true;
@@ -218,12 +222,8 @@ public class CordovaCall extends CordovaPlugin {
                 to = args.getString(0);
                 permissionCounter = 2;
                 pendingAction = "sendCall";
+                pendingActionArgs = args;
                 this.checkCallPermission();
-                /*cordova.getThreadPool().execute(new Runnable() {
-                    public void run() {
-                        getCallPhonePermission();
-                    }
-                });*/
             }
             return true;
         } else if (action.equals("connectCall")) {
@@ -367,6 +367,19 @@ public class CordovaCall extends CordovaPlugin {
                 return; // Return here and continue in onRequestPermissionResult
             }
 
+            Boolean requestCamera = false;
+            try {
+                requestCamera = "sendCall".equals(this.pendingAction) && this.pendingActionArgs.getString(1).startsWith("meeting");
+            } catch (JSONException e) {
+                // Because pendingActionArgs is a JSON array we must either declare this function throws JSONExceptions or suround with try/catch
+                throw new RuntimeException(e);
+            }
+
+            if (requestCamera && !CordovaCall.getCordova().hasPermission(Manifest.permission.CAMERA)) {
+                cordova.requestPermission(this, CAMERA_REQ_CODE, Manifest.permission.CAMERA);
+                return; // Return here and continue in onRequestPermissionResult
+            }
+
             PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
             PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
             if(currentPhoneAccount.isEnabled()) {
@@ -480,6 +493,8 @@ public class CordovaCall extends CordovaPlugin {
             {
                 if(requestCode == RECORD_AUDIO_REQ_CODE) {
                     this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, RECORD_AUDIO_REQUIRED));
+                } else if (requestCode == CAMERA_REQ_CODE) {
+                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, CAMERA_PERMISSION_REQUIRED));
                 } else {
                     this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "CALL_PHONE Permission Denied"));
                 }
@@ -495,6 +510,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callNumber();
                 break;
             case RECORD_AUDIO_REQ_CODE:
+            case CAMERA_REQ_CODE:
                 // Permission granted, continue with the call process
                 this.checkCallPermission();
                 break;
