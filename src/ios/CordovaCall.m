@@ -24,6 +24,8 @@ NSString* callId;
 NSString* callData;
 BOOL isMutedState;
 NSTimer *keepAlive;
+BOOL keepAliveInBackground = NO;
+double keepAliveInterval = 0.2;
 NSMutableDictionary* webSockets;
 UIBackgroundTaskIdentifier bgTask;
 
@@ -70,7 +72,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(receiveCallFromRecents:) name:@"RecentsCallNotification" object:nil];
     //detect Audio Route Changes to make speakerOn and speakerOff event handlers
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleAudioRouteChange:) name:AVAudioSessionRouteChangeNotification object:nil];
-    
+
+    // Add a listener to keep the JS alive when it is in the background
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_keepAliveInBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(stopKeepAliveInterval) name:UIApplicationWillEnterForegroundNotification object:nil];
+
     // Initialize PKPushRegistry
     //http://stackoverflow.com/questions/27245808/implement-pushkit-and-test-in-development-behavior/28562124#28562124
     dispatch_queue_t mainQueue = dispatch_get_main_queue();
@@ -682,31 +688,82 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
+// Manually call to keep the JS alive
 - (void) keepAlive:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"keepAlive"];
-    
+    [self startKeepAliveInterval];
+}
+
+// Manually call to stop keeping JS alive
+- (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"stopKeepAlive"];
+    [self stopKeepAliveInterval];
+}
+
+// Keeps the JS alive with default interval
+- (void) startKeepAliveInterval
+{
+    [self startKeepAliveInterval:0.2];
+}
+
+// Keeps the JS alive with a defined interval
+- (void) startKeepAliveInterval:(double)interval;
+{
     // Invalidate any existing timer
     [keepAlive invalidate];
     keepAlive = nil;
-    
+
+    // defaults to 200ms
+    if (interval <= 0) {
+        interval = 0.2;
+    }
+
     [self _keepWKWebViewActive:nil];
-    keepAlive = [NSTimer scheduledTimerWithTimeInterval:0.2
+    keepAlive = [NSTimer scheduledTimerWithTimeInterval:interval
                                      target:self
                                      selector:@selector(_keepWKWebViewActive:)
                                      userInfo:nil
                                      repeats:YES];
 }
 
-- (void) stopKeepAlive:(CDVInvokedUrlCommand*)command
+- (void) stopKeepAliveInterval;
 {
-  if (keepAlive) {
-    [self logMessage:@"stopKeepAlive"];
-    [keepAlive invalidate];
-    keepAlive = nil;
-    // End background task also
-    [self _endBackgroundTask];
-  }
+    if (keepAlive) {
+        [self logMessage:@"stopKeepAliveInterval"];
+        [keepAlive invalidate];
+        keepAlive = nil;
+        // End background task also
+        [self _endBackgroundTask];
+    }
+}
+
+// Sets if the app should keep the JS alive in the background
+- (void) keepAliveInBackground:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"keepAliveInBackground"];
+    keepAliveInBackground = YES;
+    double argVal = [[command.arguments objectAtIndex:0] doubleValue];
+    if (argVal > 0) {
+        keepAliveInterval = argVal;
+    }
+}
+
+// Method that gets called if the app is put into the background, will keep JS alive if set
+- (void) _keepAliveInBackground;
+{
+    [self logMessage:@"_keepAliveInBackground"];
+    if (keepAliveInBackground) {
+        [self startKeepAliveInterval:keepAliveInterval];
+    }
+}
+
+- (void) stopKeepAliveInBackground:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"stopKeepAliveInBackground"];
+    keepAliveInBackground = NO;
+    [self stopKeepAliveInterval];
 }
 
 - (void)_endBackgroundTask;

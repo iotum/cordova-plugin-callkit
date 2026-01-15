@@ -111,6 +111,8 @@ exports.dismissRingingCall = function (success) {
   exec(success, null, "CordovaCall", "dismissRingingCall", []);
 }
 
+// iOS Only Functions
+
 exports.log = function (message) {
   exec(null, null, "CordovaCall", "log", [message]);
 }
@@ -121,6 +123,14 @@ exports.keepAlive = function (callback) {
 
 exports.stopKeepAlive = function () {
   exec(null, null, "CordovaCall", "stopKeepAlive", []);
+}
+
+exports.keepAliveInBackground = function (interval) {
+  exec(null, null, "CordovaCall", "keepAliveInBackground", [interval]);
+}
+
+exports.stopKeepAliveInBackground = function () {
+  exec(null, null, "CordovaCall", "stopKeepAliveInBackground", []);
 }
 
 exports.wsConnect = function (wsOptions, listener, success, error) {
