@@ -233,7 +233,7 @@ public class MyConnectionService extends ConnectionService {
                     @Override
                     public void run() {
                         if (getState() == Connection.STATE_ACTIVE) {
-                            updateNotification();
+                            //updateNotification();
                         }
                     }
                 };
@@ -243,23 +243,8 @@ public class MyConnectionService extends ConnectionService {
                 this.callNotification = new CallNotification(payloadString, context);
                 Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
 
-                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
-            }
-
-            private void updateNotification() {
-                CallNotification.Style style = this.getState() == Connection.STATE_RINGING ? CallNotification.Style.INCOMING_CALL : CallNotification.Style.ONGOING_CALL;
-
-                // Lowering the priority of the ongoing call notification (when the MainActivity is in the foreground)
-                // is done to prevent the notification from being displayed as a card that
-                // would overlap the top portion of the MainActivity.
-                boolean isInForeground = CordovaCall.isMainActivityInForeground();
-                int priority = (style == CallNotification.Style.ONGOING_CALL && isInForeground) ? NotificationCompat.PRIORITY_MIN : NotificationCompat.PRIORITY_HIGH;
-
-                Log.d(TAG, "updating notification style: " + style + " priority: " + priority);
-                Notification notification = this.callNotification.build(style, priority);
-
-                // Call startForeground again which allows for updating the associated notification of the same ID
-                startForeground(this.callNotification.getNotificationID(), notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.notify(this.callNotification.getNotificationID(), notification);
             }
 
             @Override
@@ -268,11 +253,22 @@ public class MyConnectionService extends ConnectionService {
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
-                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-
                 showWebApp("answerCall", payloadString);
-                CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
+
+
+                // TODO: create action (similar to connectCall for facetalk to tell native layer to set call active, start mic service, etc.)
+                final Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.d(TAG, "Starting CallAudioService...");
+                        Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+                        startForegroundService(intent);
+
+                        Log.d(TAG, "Emitting CordovaCall answer event...");
+                        CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
+                    }
+                }, 3000);
             }
 
             @Override
@@ -283,12 +279,18 @@ public class MyConnectionService extends ConnectionService {
                 showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
 
                 CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
+
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.cancel(this.callNotification.getNotificationID());
             }
 
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
                 this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.cancel(this.callNotification.getNotificationID());
             }
 
             @Override
@@ -305,10 +307,8 @@ public class MyConnectionService extends ConnectionService {
 
                 switch (state) {
                     case Connection.STATE_ACTIVE:
-                        updateNotification(); // Will update it to an "ongoing" CallStyle notification
                         break;
                     case Connection.STATE_DISCONNECTED:
-                        stopForeground(STOP_FOREGROUND_REMOVE); // Cancels the associated notification
                         connectionMap.remove(callUUID);
                         if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
                             activeConnectionUUID = null;
@@ -318,8 +318,9 @@ public class MyConnectionService extends ConnectionService {
                         }
                         this.destroy();
 
-                        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                        audioManager.setMode(AudioManager.MODE_NORMAL);
+//                        Log.d(TAG, "Stopping CallAudioService...");
+//                        Intent serviceIntent = new Intent(context, CallAudioService.class);
+//                        context.stopService(serviceIntent);
                         break;
                 }
 
@@ -435,7 +436,7 @@ public class MyConnectionService extends ConnectionService {
                 .setOngoing(true)
                 .build();
 
-        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL | FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
 
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
