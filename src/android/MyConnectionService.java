@@ -221,7 +221,7 @@ public class MyConnectionService extends ConnectionService {
         connectionAddedMap.remove(callUUID);
 
         final Connection connection = new Connection() {
-            CallNotification callNotification;
+            CallNotification incomingCallNotification;
             Runnable mainActivityChangeListener;
 
             @Override
@@ -229,32 +229,28 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
 
-                this.mainActivityChangeListener = new Runnable() {
-                    @Override
-                    public void run() {
-                        if (getState() == Connection.STATE_ACTIVE) {
-                            //updateNotification();
-                        }
-                    }
-                };
-
-                CordovaCall.registerMainActivityStateChangeListener(this.mainActivityChangeListener);
-
-                this.callNotification = new CallNotification(payloadString, context);
-                Notification notification = this.callNotification.build(CallNotification.Style.INCOMING_CALL);
+                this.incomingCallNotification = new CallNotification(payloadString, context);
+                Notification notification = this.incomingCallNotification.build(CallNotification.Style.INCOMING_CALL);
 
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.notify(this.callNotification.getNotificationID(), notification);
+                notificationManager.notify(this.incomingCallNotification.getNotificationID(), notification);
+            }
+
+            public void cancelIncomingCallNotification() {
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.cancel(this.incomingCallNotification.getNotificationID());
             }
 
             @Override
             public void onAnswer() {
                 Log.d(TAG, "onAnswer()");
+
+                cancelIncomingCallNotification();
+
                 this.setActive();
                 activeConnectionUUID = callUUID;
 
                 showWebApp("answerCall", payloadString);
-
 
                 // TODO: create action (similar to connectCall for facetalk to tell native layer to set call active, start mic service, etc.)
                 final Handler handler = new Handler();
@@ -279,18 +275,12 @@ public class MyConnectionService extends ConnectionService {
                 showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
 
                 CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
-
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(this.callNotification.getNotificationID());
             }
 
             @Override
             public void onAbort() {
                 Log.d(TAG, "onAbort, call_uuid: " + callUUID);
                 this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(this.callNotification.getNotificationID());
             }
 
             @Override
@@ -318,9 +308,11 @@ public class MyConnectionService extends ConnectionService {
                         }
                         this.destroy();
 
-//                        Log.d(TAG, "Stopping CallAudioService...");
-//                        Intent serviceIntent = new Intent(context, CallAudioService.class);
-//                        context.stopService(serviceIntent);
+                        cancelIncomingCallNotification();
+
+                        Log.d(TAG, "Stopping CallAudioService...");
+                        Intent serviceIntent = new Intent(context, CallAudioService.class);
+                        context.stopService(serviceIntent);
                         break;
                 }
 
@@ -401,10 +393,10 @@ public class MyConnectionService extends ConnectionService {
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
-                    stopForeground(true); // Return ConnectionService to background and cancels notification
 
-                    AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                    audioManager.setMode(AudioManager.MODE_NORMAL);
+                    Log.d(TAG, "Stopping CallAudioService foreground service...");
+                    Intent serviceIntent = new Intent(context, CallAudioService.class);
+                    context.stopService(serviceIntent);
                 }
             }
         };
@@ -415,31 +407,9 @@ public class MyConnectionService extends ConnectionService {
             connection.setStatusHints(statusHints);
         }
 
-        final String OUTGOING_CALL_NOTIFICATION_CHANNEL_ID = "outgoing_calls";
-
-        NotificationChannel serviceChannel = new NotificationChannel(
-                OUTGOING_CALL_NOTIFICATION_CHANNEL_ID,
-                "Outgoing Calls",
-                NotificationManager.IMPORTANCE_LOW
-        );
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.createNotificationChannel(serviceChannel);
-        }
-
-        final int OUTGOING_CALL_NOTIFICATION_ID = 1;
-        Notification notification = new NotificationCompat.Builder(this, OUTGOING_CALL_NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Outgoing Call")
-                .setContentText("Active call")
-                .setSmallIcon(android.R.drawable.ic_menu_call)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true)
-                .build();
-
-        startForeground(OUTGOING_CALL_NOTIFICATION_ID, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL);
-
-        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        Log.d(TAG, "Starting CallAudioService foreground service...");
+        Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+        startForegroundService(intent);
 
         // Set capabilities to indicate this handles audio
         connection.setConnectionCapabilities(

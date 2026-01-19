@@ -15,6 +15,10 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 
+/**
+ * This is a service designed to be launched directly into the foreground throughout the duration
+ * of an active incoming or outgoing call to retain microphone access and set the correct audio mode.
+ */
 public class CallAudioService extends Service {
     private static final String TAG = "CallAudioService";
     private static final String CHANNEL_ID = "voip_call_channel";
