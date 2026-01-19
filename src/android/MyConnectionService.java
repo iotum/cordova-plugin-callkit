@@ -252,19 +252,12 @@ public class MyConnectionService extends ConnectionService {
 
                 showWebApp("answerCall", payloadString);
 
-                // TODO: create action (similar to connectCall for facetalk to tell native layer to set call active, start mic service, etc.)
-                final Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        Log.d(TAG, "Starting CallAudioService...");
-                        Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-                        startForegroundService(intent);
+                Log.d(TAG, "Starting CallAudioService...");
+                Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+                startForegroundService(intent);
 
-                        Log.d(TAG, "Emitting CordovaCall answer event...");
-                        CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
-                    }
-                }, 3000);
+                Log.d(TAG, "Emitting CordovaCall answer event...");
+                CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
             }
 
             @Override
