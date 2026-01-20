@@ -27,9 +27,13 @@ public class CallAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        String payload = intent.getStringExtra("payload");
+        String payload = intent.getStringExtra("pushMessagePayload");
         CallNotification onGoingCallNotification = new CallNotification(payload, this.getApplicationContext());
-        Notification notification = onGoingCallNotification.build(CallNotification.Style.ONGOING_CALL);
+        String calleeName = intent.getStringExtra("calleeName");
+        if (calleeName != null) {
+            onGoingCallNotification.setCalleeName(calleeName);
+        }
+        Notification notification = onGoingCallNotification.build(CallNotification.Style.ONGOING_CALL, NotificationCompat.PRIORITY_MIN);
         int notificationID = onGoingCallNotification.getNotificationID();
 
         // For Android 14 (API 34) and above, you MUST specify types in code

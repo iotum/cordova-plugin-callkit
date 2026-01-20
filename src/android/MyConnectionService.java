@@ -96,7 +96,7 @@ public class MyConnectionService extends ConnectionService {
                 } else {
                     if (conn.getState() == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
-                    } else {
+                    } else if (conn.getState() == Connection.STATE_RINGING) {
                         Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, call_uuid: " + callUUID);
                         conn.onAbort();
                     }
@@ -254,6 +254,7 @@ public class MyConnectionService extends ConnectionService {
 
                 Log.d(TAG, "Starting CallAudioService...");
                 Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+                intent.putExtra("pushMessagePayload", payloadString);
                 startForegroundService(intent);
 
                 Log.d(TAG, "Emitting CordovaCall answer event...");
@@ -402,6 +403,7 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "Starting CallAudioService foreground service...");
         Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+        intent.putExtra("calleeName", request.getExtras().getString("to"));
         startForegroundService(intent);
 
         // Set capabilities to indicate this handles audio
