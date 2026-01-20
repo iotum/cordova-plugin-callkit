@@ -21,34 +21,29 @@ import androidx.core.app.ServiceCompat;
  */
 public class CallAudioService extends Service {
     private static final String TAG = "CallAudioService";
-    private static final String CHANNEL_ID = "voip_call_channel";
-    private static final int NOTIFICATION_ID = 123;
 
     // onStartCommand is called in response to the startService() intent
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        createNotificationChannel();
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Active Call")
-                .setContentText("Microphone is in use")
-                .setSmallIcon(android.R.drawable.ic_menu_call)
-                .setOngoing(true)
-                .build();
+        String payload = intent.getStringExtra("payload");
+        CallNotification onGoingCallNotification = new CallNotification(payload, this.getApplicationContext());
+        Notification notification = onGoingCallNotification.build(CallNotification.Style.ONGOING_CALL);
+        int notificationID = onGoingCallNotification.getNotificationID();
 
         // For Android 14 (API 34) and above, you MUST specify types in code
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             Log.d(TAG, "calling startForeground (service types phone call + microphone)...");
             ServiceCompat.startForeground(
                     this,
-                    NOTIFICATION_ID,
+                    notificationID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL |
                             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             );
         } else {
-            startForeground(NOTIFICATION_ID, notification);
+            startForeground(notificationID, notification);
         }
 
         Log.d(TAG, "Setting audio mode to MODE_IN_COMMUNICATION");
@@ -56,18 +51,6 @@ public class CallAudioService extends Service {
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
         return START_STICKY;
-    }
-
-    private void createNotificationChannel() {
-        NotificationChannel serviceChannel = new NotificationChannel(
-                CHANNEL_ID,
-                "VoIP Call Service",
-                NotificationManager.IMPORTANCE_LOW
-        );
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.createNotificationChannel(serviceChannel);
-        }
     }
 
     // Note: Although a started service is stopped by a call to either stopSelf() or stopService(),
