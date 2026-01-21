@@ -218,10 +218,12 @@ public class MyConnectionService extends ConnectionService {
         }
         final String callUUID = _callUUID;
 
+        String callerName = payload.optString("from", "UNKNOWN CALLER");
+
         connectionAddedMap.remove(callUUID);
 
         final Connection connection = new Connection() {
-            CallNotification incomingCallNotification;
+            IncomingCallNotification incomingCallNotification;
             Runnable mainActivityChangeListener;
 
             @Override
@@ -229,8 +231,8 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
 
-                this.incomingCallNotification = new CallNotification(payloadString, context);
-                Notification notification = this.incomingCallNotification.build(CallNotification.Style.INCOMING_CALL);
+                this.incomingCallNotification = new IncomingCallNotification(payloadString, context);
+                Notification notification = this.incomingCallNotification.build();
 
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 notificationManager.notify(this.incomingCallNotification.getNotificationID(), notification);
@@ -242,6 +244,7 @@ public class MyConnectionService extends ConnectionService {
                 }
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 notificationManager.cancel(this.incomingCallNotification.getNotificationID());
+                this.incomingCallNotification = null;
             }
 
             @Override
@@ -257,7 +260,7 @@ public class MyConnectionService extends ConnectionService {
 
                 Log.d(TAG, "Starting CallAudioService...");
                 Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-                intent.putExtra("pushMessagePayload", payloadString);
+                intent.putExtra("peerName", callerName);
                 startForegroundService(intent);
 
                 Log.d(TAG, "Emitting CordovaCall answer event...");
@@ -321,7 +324,7 @@ public class MyConnectionService extends ConnectionService {
             }
         };
 
-        connection.setCallerDisplayName(payload.optString("from", "UNKNOWN CALLER"), TelecomManager.PRESENTATION_ALLOWED);
+        connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
 
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
@@ -406,7 +409,7 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "Starting CallAudioService foreground service...");
         Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-        intent.putExtra("calleeName", request.getExtras().getString("to"));
+        intent.putExtra("peerName", request.getExtras().getString("to"));
         startForegroundService(intent);
 
         // Set capabilities to indicate this handles audio

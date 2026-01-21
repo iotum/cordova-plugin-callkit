@@ -19,6 +19,11 @@ public class CallActionReceiver extends BroadcastReceiver {
             Connection activeConnection = MyConnectionService.getConnection();
             if (activeConnection != null) {
                 activeConnection.onDisconnect();
+            } else {
+                Log.d(TAG, "no active call to disconnect (possibly already disconnected), closing notification");
+                int notificationID = intent.getIntExtra("notificationID", 0);
+                NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.cancel(notificationID);
             }
             return;
         }

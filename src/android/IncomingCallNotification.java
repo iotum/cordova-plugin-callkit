@@ -6,7 +6,6 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -21,41 +20,26 @@ import org.json.JSONObject;
 import java.util.Random;
 
 
-public class CallNotification {
-    private static final String TAG = "CallNotification";
+public class IncomingCallNotification {
+    private static final String TAG = "IncomingCallNotification";
 
     private String pushMessagePayload;
-    private String calleeName;
     private Integer notificationID;
     private Context context;
     private NotificationManager notificationManager;
 
     private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
-    public enum Style {
-        INCOMING_CALL,
-        ONGOING_CALL
-    }
-
-    public CallNotification(String pushMessagePayload, Context context) {
+    public IncomingCallNotification(String pushMessagePayload, Context context) {
         this.pushMessagePayload = pushMessagePayload;
-        this.notificationID = new Random().nextInt(100000) + 1; // Random int > 0 TODO: maybe derive from call UUID string
+        this.notificationID = new Random().nextInt(100000) + 1;
         this.context = context;
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
         this.createNotificationChannel();
     }
 
-    // Display name of the callee you're calling (for outgoing calls)
-    public void setCalleeName(String calleeName) {
-        this.calleeName = calleeName;
-    }
-
-    public Notification build(Style style) {
-        return this.build(style, NotificationCompat.PRIORITY_HIGH);
-    }
-
-    public Notification build(Style style, int priority) {
+    public Notification build() {
         int timeout = 30000;
 
         // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
@@ -78,43 +62,20 @@ public class CallNotification {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
-        hangupIntent.setAction("hangUpCall");
-        hangupIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-        hangupIntent.putExtra("notificationID", this.notificationID);
-        PendingIntent hangupPendingIntent = PendingIntent.getBroadcast(
-                this.context, 0, hangupIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
         JSONObject payload = null;
-        if (this.pushMessagePayload != null) {
-            try {
-                payload = new JSONObject(this.pushMessagePayload);
-            } catch (JSONException e) {
-                throw new RuntimeException("CallNotification unable to parse pushMessagePayload, error: " + e);
-            }
+        try {
+            payload = new JSONObject(this.pushMessagePayload);
+        } catch (JSONException e) {
+            throw new RuntimeException("IncomingCallNotification: unable to parse pushMessagePayload, error: " + e);
         }
 
-        String contentTitle;
-        switch (style) {
-            case INCOMING_CALL:
-                contentTitle = "Incoming call";
-                break;
-            case ONGOING_CALL:
-                contentTitle = "Ongoing call";
-                break;
-            default:
-                throw new RuntimeException("No CallNotification contentTitle defined for style: " + style);
-        }
+        String peerName = payload.optString("from", "UNKNOWN");
 
-        String peerName = payload != null ? payload.optString("from", "UNKNOWN") : this.calleeName;
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
-                .setContentTitle(contentTitle)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, IncomingCallNotification.NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Incoming call")
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setLargeIcon(BitmapFactory.decodeResource(this.context.getResources(), android.R.drawable.sym_def_app_icon))
-                .setPriority(priority)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
@@ -127,33 +88,24 @@ public class CallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
+            // NOTE: this requirements is met by the use of a full-screen intent
+            builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
 
-            if (style == style.INCOMING_CALL) {
-                builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
-
-                Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
-                fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-                fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                        this.context, 0, fullScreenIntent,
-                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_CANCEL_CURRENT
-                );
-                builder.setFullScreenIntent(fullScreenPendingIntent, true);
-            } else if (style == style.ONGOING_CALL) {
-                builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
-            }
+            Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
+            fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+            fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                    this.context, 0, fullScreenIntent,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_CANCEL_CURRENT
+            );
+            builder.setFullScreenIntent(fullScreenPendingIntent, true);
         } else {
+            Log.d(TAG, "Creating a normal (non call-style) incoming call notification (due to lack of support of call-style notifications)...");
             builder.setContentText(peerName);
-
-            if (style == Style.INCOMING_CALL) {
-                builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
-                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
-            } else if (style == Style.ONGOING_CALL) {
-                builder.addAction(android.R.drawable.ic_menu_call, "Hang up", hangupPendingIntent);
-            }
+            builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent);
         }
 
-        Log.d(TAG, "launching call notification via android NotificationManager notify()...");
         Notification notification = builder.build();
 
         return notification;
@@ -172,7 +124,7 @@ public class CallNotification {
     // The notification sound on > Android 8.0 comes from the notification channel.
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
-                CallNotification.NOTIFICATION_CHANNEL_ID,
+                IncomingCallNotification.NOTIFICATION_CHANNEL_ID,
                 "Incoming Calls",
                 NotificationManager.IMPORTANCE_HIGH
         );
