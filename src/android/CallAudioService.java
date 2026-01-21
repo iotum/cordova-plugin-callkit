@@ -24,7 +24,10 @@ public class CallAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        String peerName = intent.getStringExtra("peerName");
+        String peerName = intent != null ? intent.getStringExtra("peerName") : null;
+        if (peerName == null) {
+            peerName = "Unknown";
+        }
         OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName);
 
         Notification notification = onGoingCallNotification.build();
