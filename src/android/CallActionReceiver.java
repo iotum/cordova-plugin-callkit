@@ -14,6 +14,15 @@ public class CallActionReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
         Log.d(TAG, "onReceive, intent action: " + action);
+
+        if (action.equals("hangUpCall")) {
+            Connection activeConnection = MyConnectionService.getConnection();
+            if (activeConnection != null) {
+                activeConnection.onDisconnect();
+            }
+            return;
+        }
+
         String pushMessagePayload = intent.getStringExtra("pushMessagePayload");
 
         Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);

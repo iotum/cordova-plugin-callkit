@@ -25,6 +25,7 @@ public class CallNotification {
     private static final String TAG = "CallNotification";
 
     private String pushMessagePayload;
+    private String calleeName;
     private Integer notificationID;
     private Context context;
     private NotificationManager notificationManager;
@@ -43,6 +44,11 @@ public class CallNotification {
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
         this.createNotificationChannel();
+    }
+
+    // Display name of the callee you're calling (for outgoing calls)
+    public void setCalleeName(String calleeName) {
+        this.calleeName = calleeName;
     }
 
     public Notification build(Style style) {
@@ -82,13 +88,13 @@ public class CallNotification {
         );
 
         JSONObject payload = null;
-        try {
-            payload = new JSONObject(this.pushMessagePayload);
-        } catch (JSONException e) {
-            throw new RuntimeException("CallNotification unable to parse pushMessagePayload, error: " + e);
+        if (this.pushMessagePayload != null) {
+            try {
+                payload = new JSONObject(this.pushMessagePayload);
+            } catch (JSONException e) {
+                throw new RuntimeException("CallNotification unable to parse pushMessagePayload, error: " + e);
+            }
         }
-
-        String callerName = payload.optString("from", "UNKNOWN");
 
         String contentTitle;
         switch (style) {
@@ -102,6 +108,8 @@ public class CallNotification {
                 throw new RuntimeException("No CallNotification contentTitle defined for style: " + style);
         }
 
+        String peerName = payload != null ? payload.optString("from", "UNKNOWN") : this.calleeName;
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this.context, CallNotification.NOTIFICATION_CHANNEL_ID)
                 .setContentTitle(contentTitle)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
@@ -112,9 +120,9 @@ public class CallNotification {
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Log.d(TAG, "Creating CallStyle.forIncomingCall style notification (as this is supported by the device)...");
+            Log.d(TAG, "Creating call-style notification (as this is supported by the device)...");
             Person callerPerson = new Person.Builder()
-                    .setName(callerName)
+                    .setName(peerName)
                     .setImportant(true)
                     .build();
 
@@ -135,7 +143,7 @@ public class CallNotification {
                 builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
             }
         } else {
-            builder.setContentText(callerName);
+            builder.setContentText(peerName);
 
             if (style == Style.INCOMING_CALL) {
                 builder.addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
