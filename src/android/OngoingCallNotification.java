@@ -61,7 +61,7 @@ public class OngoingCallNotification {
                     .build();
 
             // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
-            // NOTE: this requirements is met by the use of a foreground service
+            // NOTE: this requirement is met by the use of a foreground service
             builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
         } else {
             builder.setContentText(peerName);
