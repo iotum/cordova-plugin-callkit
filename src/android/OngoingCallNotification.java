@@ -60,7 +60,7 @@ public class OngoingCallNotification {
                     .setImportant(true)
                     .build();
 
-            // "CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent."
+            // "CallStyle notifications must be for a foreground service or user initiated job or use a fullScreenIntent."
             // NOTE: this requirement is met by the use of a foreground service
             builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
         } else {
