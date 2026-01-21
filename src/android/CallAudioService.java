@@ -1,8 +1,6 @@
 package com.dmarc.cordovacall;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -12,7 +10,6 @@ import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 
-import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 
 /**
@@ -27,13 +24,13 @@ public class CallAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        String payload = intent.getStringExtra("pushMessagePayload");
-        CallNotification onGoingCallNotification = new CallNotification(payload, this.getApplicationContext());
-        String calleeName = intent.getStringExtra("calleeName");
-        if (calleeName != null) {
-            onGoingCallNotification.setCalleeName(calleeName);
+        String peerName = intent != null ? intent.getStringExtra("peerName") : null;
+        if (peerName == null) {
+            peerName = "Unknown";
         }
-        Notification notification = onGoingCallNotification.build(CallNotification.Style.ONGOING_CALL, NotificationCompat.PRIORITY_MIN);
+        OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName);
+
+        Notification notification = onGoingCallNotification.build();
         int notificationID = onGoingCallNotification.getNotificationID();
 
         // For Android 14 (API 34) and above, you MUST specify types in code
