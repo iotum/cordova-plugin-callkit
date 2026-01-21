@@ -54,7 +54,7 @@ public class OngoingCallNotification {
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it (via notification manager or stopping associated foreground service)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Log.d(TAG, "Creating call-style notification for on-going call(as this is supported by the device)...");
+            Log.d(TAG, "Creating call-style notification for on-going call (as this is supported by the device)...");
             Person callerPerson = new Person.Builder()
                     .setName(peerName)
                     .setImportant(true)
