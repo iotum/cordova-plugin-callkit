@@ -409,7 +409,7 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "Starting CallAudioService foreground service...");
         Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-        intent.putExtra("peerName", request.getExtras().getString("to"));
+        intent.putExtra("peerName", request.getExtras().getString("to", "uknown"));
         startForegroundService(intent);
 
         // Set capabilities to indicate this handles audio
