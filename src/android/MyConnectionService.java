@@ -237,6 +237,9 @@ public class MyConnectionService extends ConnectionService {
             }
 
             public void cancelIncomingCallNotification() {
+                if (this.incomingCallNotification == null) {
+                    return;
+                }
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 notificationManager.cancel(this.incomingCallNotification.getNotificationID());
             }
