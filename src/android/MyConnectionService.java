@@ -99,8 +99,6 @@ public class MyConnectionService extends ConnectionService {
                     } else if (conn.getState() == Connection.STATE_RINGING) {
                         Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, call_uuid: " + callUUID);
                         conn.onAbort();
-                    } else {
-                        conn.onDisconnect();
                     }
                 }
             } else {
