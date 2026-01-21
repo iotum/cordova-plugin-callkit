@@ -46,7 +46,7 @@ public class CallNotification {
         this.createNotificationChannel();
     }
 
-    // Display name of the callee your calling (for outgoing calls)
+    // Display name of the callee you're calling (for outgoing calls)
     public void setCalleeName(String calleeName) {
         this.calleeName = calleeName;
     }
