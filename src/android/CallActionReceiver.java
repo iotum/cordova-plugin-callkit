@@ -21,9 +21,10 @@ public class CallActionReceiver extends BroadcastReceiver {
                 activeConnection.onDisconnect();
             } else {
                 Log.d(TAG, "no active call to disconnect (possibly already disconnected), closing notification");
-                int notificationID = intent.getIntExtra("notificationID", 0);
-                NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(notificationID);
+                // Normally: we disconnect the telecom connection, which brings down the CallAudioService foreground service and its notification in turn
+                // For robustness (to prevent any orphaned ongoing notification) ensure the foreground service + notification is shutdown
+                Intent serviceIntent = new Intent(context, CallAudioService.class);
+                context.stopService(serviceIntent);
             }
             return;
         }
