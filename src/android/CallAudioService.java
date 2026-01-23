@@ -24,7 +24,8 @@ public class CallAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        // In some cases the OS will start / re-start a service with a n
+        // It's possible for the service to be started with no-intent by the OS,
+        // usually this won't happen though with START_NOT_STICKY
         if (intent == null) {
             Log.e(TAG, "service started with no intent, exiting");
             this.stopSelf();
@@ -57,7 +58,7 @@ public class CallAudioService extends Service {
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
         // Don't auto restart if the app crashes, or the service is killed, etc.
-        // as this may result in the app having no telecom connection but an orphaned CallAudioService.
+        // as this may result in the app having no telecom connection but a orphaned CallAudioService.
         return START_NOT_STICKY;
     }
 
