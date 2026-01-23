@@ -58,7 +58,7 @@ public class CallAudioService extends Service {
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
         // Don't auto restart if the app crashes, or the service is killed, etc.
-        // as this may result in the app having no telecom connection but a orphaned CallAudioService.
+        // as this may result in the app having no telecom connection but an orphaned CallAudioService.
         return START_NOT_STICKY;
     }
 
