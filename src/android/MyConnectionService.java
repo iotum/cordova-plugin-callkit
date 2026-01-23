@@ -377,17 +377,7 @@ public class MyConnectionService extends ConnectionService {
 
             @Override
             public void onStateChanged(int state) {
-                if(state == Connection.STATE_DIALING) {
-                    final Handler handler = new Handler();
-                    handler.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            Intent intent = new Intent(CordovaCall.getCordova().getActivity().getApplicationContext(), CordovaCall.getCordova().getActivity().getClass());
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                            CordovaCall.getCordova().getActivity().getApplicationContext().startActivity(intent);
-                        }
-                    }, 500);
-                } else if (state == Connection.STATE_DISCONNECTED) {
+                if (state == Connection.STATE_DISCONNECTED) {
                     // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
                     // Ensure the connection is destroyed, etc.
                     this.destroy();
