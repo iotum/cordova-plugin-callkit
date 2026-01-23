@@ -24,10 +24,15 @@ public class CallAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
 
-        String peerName = intent != null ? intent.getStringExtra("peerName") : null;
-        if (peerName == null) {
-            peerName = "Unknown";
+        // In some cases the OS will start / re-start a service with a n
+        if (intent == null) {
+            Log.e(TAG, "service started with no intent, exiting");
+            this.stopSelf();
+            return START_NOT_STICKY;
         }
+
+        String peerName = intent.getStringExtra("peerName");
+
         OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName);
 
         Notification notification = onGoingCallNotification.build();
@@ -51,7 +56,9 @@ public class CallAudioService extends Service {
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
-        return START_STICKY;
+        // Don't auto restart if the app crashes, or the service is killed, etc.
+        // as this may result in the app having no telecom connection but an orphaned CallAudioService.
+        return START_NOT_STICKY;
     }
 
     // Note: Although a started service is stopped by a call to either stopSelf() or stopService(),
