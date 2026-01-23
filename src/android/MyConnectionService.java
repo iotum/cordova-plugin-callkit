@@ -42,7 +42,6 @@ public class MyConnectionService extends ConnectionService {
     static final String TAG = "MyConnectionService";
     private static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are call_uuid strings
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
-    Context context;
 
     private CallActionReceiver callActionReceiver;
 
@@ -108,9 +107,9 @@ public class MyConnectionService extends ConnectionService {
                     if (connectionAddedMap.containsKey(callUUID)) {
                         Log.d(TAG, "A connection was already added for call_uuid: " + callUUID);
                     } else {
-                        TelecomManager tm = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+                        Context context = this.getApplicationContext();
 
-                        context = (Context) this.getApplicationContext();
+                        TelecomManager tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
                         PhoneAccountHandle phoneAccountHandle = PhoneAccountManager.getPhoneAccountHandle(context);
 
@@ -156,6 +155,7 @@ public class MyConnectionService extends ConnectionService {
 
     public void showWebApp(String userAction, String payload) {
         Log.d(TAG, "showWebApp()");
+        Context context = this.getApplicationContext();
         PackageManager packageManager = context.getPackageManager();
 
         Class mainActivity;
@@ -231,7 +231,7 @@ public class MyConnectionService extends ConnectionService {
                 Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
                 this.setRinging();
 
-                this.incomingCallNotification = new IncomingCallNotification(payloadString, context);
+                this.incomingCallNotification = new IncomingCallNotification(payloadString, getApplicationContext());
                 Notification notification = this.incomingCallNotification.build();
 
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -311,6 +311,7 @@ public class MyConnectionService extends ConnectionService {
                         cancelIncomingCallNotification();
 
                         Log.d(TAG, "Stopping CallAudioService...");
+                        Context context = getApplicationContext();
                         Intent serviceIntent = new Intent(context, CallAudioService.class);
                         context.stopService(serviceIntent);
                         break;
@@ -320,6 +321,7 @@ public class MyConnectionService extends ConnectionService {
                 Intent intent = new Intent("connection_state_changed");
                 intent.putExtra("call_uuid", callUUID);
                 intent.putExtra("state", state);
+                Context context = getApplicationContext();
                 LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
             }
         };
@@ -385,6 +387,7 @@ public class MyConnectionService extends ConnectionService {
                     activeConnectionUUID = null;
 
                     Log.d(TAG, "Stopping CallAudioService foreground service...");
+                    Context context = getApplicationContext();
                     Intent serviceIntent = new Intent(context, CallAudioService.class);
                     context.stopService(serviceIntent);
                 }
