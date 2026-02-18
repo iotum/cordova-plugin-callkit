@@ -47,7 +47,7 @@ exports.receiveCall = function (from, id, success, error) {
   exec(success, error, "CordovaCall", "receiveCall", [from, id]);
 };
 
-exports.sendCall = function (to, id, success, error, sessionId) {
+exports.sendCall = function (to, id, sessionId, success, error) {
   if (typeof id == "function") {
     error = success;
     success = id;
@@ -58,27 +58,27 @@ exports.sendCall = function (to, id, success, error, sessionId) {
   exec(success, error, "CordovaCall", "sendCall", [to, id, sessionId]);
 };
 
-exports.connectCall = function (success, error, sessionId) {
+exports.connectCall = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "connectCall", [sessionId]);
 };
 
-exports.endCall = function (success, error, sessionId) {
+exports.endCall = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "endCall", [sessionId]);
 };
 
-exports.mute = function (success, error, sessionId) {
+exports.mute = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "mute", [sessionId]);
 };
 
-exports.unmute = function (success, error, sessionId) {
+exports.unmute = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "unmute", [sessionId]);
 };
 
-exports.hold = function (success, error, sessionId) {
+exports.hold = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "hold", [sessionId]);
 };
 
-exports.unhold = function (success, error, sessionId) {
+exports.unhold = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "unhold", [sessionId]);
 };
 
@@ -115,7 +115,7 @@ exports.openFullScreenIntentSettings = function (success, error) {
   exec(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
 };
 
-exports.dismissRingingCall = function (success, sessionId) {
+exports.dismissRingingCall = function (sessionId, success) {
   exec(success, null, "CordovaCall", "dismissRingingCall", [sessionId]);
 }
 
