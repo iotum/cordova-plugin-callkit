@@ -453,7 +453,8 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void speakerOff() {
-        CallAudioState state = MyConnectionService.getConnection().getCallAudioState();
+        Connection conn = MyConnectionService.getConnection();
+        CallAudioState state = conn != null ? conn.getCallAudioState() : null;
         if (state == null) {
             this.callbackContext.error("Unable to get call audio state");
             return;
