@@ -454,10 +454,22 @@ public class CordovaCall extends CordovaPlugin {
 
     private void speakerOff() {
         CallAudioState state = getCallAudioState();
-        if (state == null) return;
+        if (state == null) {
+            this.callbackContext.error("Unable to get call audio state");
+            return;
+        }
 
-        boolean bluetoothAvailable = (state.getSupportedRouteMask() & CallAudioState.ROUTE_BLUETOOTH) != 0;
-        this.setConnectionAudioRoute(bluetoothAvailable ? CallAudioState.ROUTE_BLUETOOTH : CallAudioState.ROUTE_SPEAKER);
+        int supportedRoutes = state.getSupportedRouteMask();
+        if ((supportedRoutes & CallAudioState.ROUTE_BLUETOOTH) != 0) {
+            this.setConnectionAudioRoute(CallAudioState.ROUTE_BLUETOOTH);
+        } else if ((supportedRoutes & CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
+            this.setConnectionAudioRoute(CallAudioState.ROUTE_WIRED_HEADSET);
+        } else if ((supportedRoutes & CallAudioState.ROUTE_EARPIECE) != 0) {
+            this.setConnectionAudioRoute(CallAudioState.ROUTE_EARPIECE);
+        } else {
+            // Fallback to speaker if no other route is available
+            this.setConnectionAudioRoute(CallAudioState.ROUTE_SPEAKER);
+        }
     }
 
     private void setConnectionAudioRoute(int route) {
