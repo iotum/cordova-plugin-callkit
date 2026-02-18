@@ -20,7 +20,6 @@ BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
 NSString* callBackUrl;
-BOOL isMutedState;
 NSTimer *keepAlive;
 BOOL keepAliveInBackground = NO;
 double keepAliveInterval = 0.2;
@@ -264,7 +263,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString* sessionId = [command.arguments objectAtIndex:2];
     NSUUID *callUUID = [[NSUUID alloc] init];
     self.activeCalls[sessionId] = [@{
-        @"callUUID": callUUID
+        @"callUUID": callUUID,
+        @"muted": @NO
     } mutableCopy];
     
     if (hasId) {
@@ -377,11 +377,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:@"Programatically Muting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                isMutedState = YES;
+                self.activeCalls[callId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
             [self logMessage:@"Error occurred muting Call"];
-                isMutedState = NO;
+                self.activeCalls[callId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -404,11 +404,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:@"Programatically Unmuting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                isMutedState = NO;
+                self.activeCalls[callId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
             [self logMessage:@"Error occurred unmuting Call"];
-                isMutedState = YES;
+                self.activeCalls[callId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -603,7 +603,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         if(call.hasConnected) {
             for (id callbackId in callbackIds[@"hangup"]) {
                 CDVPluginResult* pluginResult = nil;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"hangup event called successfully"];
+                // Send to facetalk whihc call was ended
+                NSDictionary *resultDict = @{ @"message": @"hangup event called successfully", @"sessionId": callId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
                 [pluginResult setKeepCallbackAsBool:YES];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
             }
@@ -638,19 +640,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
     BOOL isMuted = action.muted;
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", isMutedState ? @"muted" : @"unmuted"]];
+    NSString *callId = [self callIdForUUID:action.callUUID];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", [self.activeCalls[callId][@"muted"] boolValue] ? @"muted" : @"unmuted"]];
     [action fulfill];
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
-    if (isMutedState == isMuted) {
+    if ([self.activeCalls[callId][@"muted"] boolValue] == isMuted) {
         [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isMuted ? @"mute" : @"unmute"]];
         return;
     }
-    isMutedState = isMuted ? YES : NO; // Update the internal state with the new value
+    self.activeCalls[callId][@"muted"] = @(isMuted); // Update the internal state with the new value
     for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
         [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
         CDVPluginResult* pluginResult = nil;
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:[NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"]];
+        // Send to facetalk which call was muted/unmuted
+        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": callId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
@@ -714,7 +719,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Maps the callkit internal callUUID with the facetalk callId/sessionId
-// Needed because answering and rejecting from callkit UI returns only callkit internal callUUID
+// Needed because any actions from callkit UI returns only callkit internal callUUID
 - (nullable NSString *)callIdForUUID:(NSUUID *)callUUID {
     if (!callUUID) return nil;
 
@@ -968,7 +973,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
     self.activeCalls[callId] = [@{
         @"callData": [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding],
-        @"callUUID": [[NSUUID alloc] init]
+        @"callUUID": [[NSUUID alloc] init],
+        @"muted": @NO
     } mutableCopy];
     // Notify Webhook that VOIP Push Has been received and app is started
     // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
