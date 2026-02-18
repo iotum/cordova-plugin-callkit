@@ -47,7 +47,7 @@ exports.receiveCall = function (from, id, success, error) {
   exec(success, error, "CordovaCall", "receiveCall", [from, id]);
 };
 
-exports.sendCall = function (to, id, success, error) {
+exports.sendCall = function (to, id, success, error, sessionId) {
   if (typeof id == "function") {
     error = success;
     success = id;
@@ -55,23 +55,31 @@ exports.sendCall = function (to, id, success, error) {
   } else if (id) {
     id = id.toString();
   }
-  exec(success, error, "CordovaCall", "sendCall", [to, id]);
+  exec(success, error, "CordovaCall", "sendCall", [to, id, sessionId]);
 };
 
-exports.connectCall = function (success, error) {
-  exec(success, error, "CordovaCall", "connectCall", []);
+exports.connectCall = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "connectCall", [sessionId]);
 };
 
-exports.endCall = function (success, error) {
-  exec(success, error, "CordovaCall", "endCall", []);
+exports.endCall = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "endCall", [sessionId]);
 };
 
-exports.mute = function (success, error) {
-  exec(success, error, "CordovaCall", "mute", []);
+exports.mute = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "mute", [sessionId]);
 };
 
-exports.unmute = function (success, error) {
-  exec(success, error, "CordovaCall", "unmute", []);
+exports.unmute = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "unmute", [sessionId]);
+};
+
+exports.hold = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "hold", [sessionId]);
+};
+
+exports.unhold = function (success, error, sessionId) {
+  exec(success, error, "CordovaCall", "unhold", [sessionId]);
 };
 
 exports.speakerOn = function (success, error) {
@@ -107,8 +115,8 @@ exports.openFullScreenIntentSettings = function (success, error) {
   exec(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
 };
 
-exports.dismissRingingCall = function (success) {
-  exec(success, null, "CordovaCall", "dismissRingingCall", []);
+exports.dismissRingingCall = function (success, sessionId) {
+  exec(success, null, "CordovaCall", "dismissRingingCall", [sessionId]);
 }
 
 // iOS Only Functions
