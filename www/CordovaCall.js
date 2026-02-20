@@ -74,14 +74,6 @@ exports.unmute = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "unmute", [sessionId]);
 };
 
-exports.hold = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "hold", [sessionId]);
-};
-
-exports.unhold = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "unhold", [sessionId]);
-};
-
 exports.speakerOn = function (success, error) {
   exec(success, error, "CordovaCall", "speakerOn", []);
 };

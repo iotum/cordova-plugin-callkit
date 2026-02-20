@@ -721,7 +721,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 // Returns the Callkit CXCall instance for a sessionId
 - (CXCall *)callForSessionId:(NSString *)sessionId {
-    NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
+    if (!sessionId) return nil;
+
+    NSMutableDictionary *call = self.activeCalls[sessionId];
+    if (!call) return nil;
+
+    NSUUID *callUUID = call[@"callUUID"];
     if (!callUUID) return nil;
 
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
