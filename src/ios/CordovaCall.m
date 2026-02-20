@@ -984,7 +984,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     // sessionId is the first part of the call_uuid separated by ;  IE: call_id;ftag;ttag
     NSString *sessionId = [[[payloadObj valueForKey:@"call_uuid"] componentsSeparatedByString:@";"] firstObject];
-    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], nil, sessionId, nil];
+    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
     
     // Store URL and Call Id so they can be used for call Answer/Reject
