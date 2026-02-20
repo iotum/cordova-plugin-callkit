@@ -218,7 +218,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callName = [command.arguments objectAtIndex:0];
     NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
-    NSUUID *callUUID = self.activeCalls[callId][@"callUUID"];
+    NSString* sessionId = [command.arguments objectAtIndex:2];
+    // We must always be provided a sessionId because we need to identify the call
+    if (sessionId == nil) {
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"sessionId cannot be nil"] callbackId:command.callbackId];
+        return;
+    }
+
+    // If this was called from JS, we'll need to create a new activeCall entry
+    NSMutableDictionary *call = self.activeCalls[sessionId];
+    if (!call) {
+        self.activeCalls[sessionId] = [@{
+            @"callUUID": [[NSUUID alloc] init],
+            @"muted": @NO
+        } mutableCopy];
+    }
+    NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
 
     if (hasId) {
         [[NSUserDefaults standardUserDefaults] setObject:callName forKey:[command.arguments objectAtIndex:1]];
@@ -294,8 +309,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"connectCall"];
     CDVPluginResult* pluginResult = nil;
-    NSString* callId = [command.arguments objectAtIndex:0];
-    CXCall *call = [self callForCallId:callId];
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
 
     if(call && !call.hasConnected) {
         [self.provider reportOutgoingCallWithUUID:call.UUID connectedAtDate:nil];
@@ -312,8 +327,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"endCall"];
     [self stopKeepAlive:nil];
     CDVPluginResult* pluginResult = nil;
-    NSString* callId = [command.arguments objectAtIndex:0];
-    CXCall *call = [self callForCallId:callId];
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
 
     if(call) {
         CXEndCallAction *endCallAction = [[CXEndCallAction alloc] initWithCallUUID:call.UUID];
@@ -351,7 +366,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Gets all of the pending answer call responses, actions on each one and then deletes them all from pendingCallResponses
         NSArray *answers = [pendingCallResponses filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", PENDING_RESPONSE_ANSWER]];
         for (NSDictionary *answer in answers) {
-            [self triggerCordovaEventForCallResponse:@"answer" callId:answer[@"callId"]];
+            [self triggerCordovaEventForCallResponse:@"answer" sessionId:answer[@"sessionId"]];
         }
         [pendingCallResponses removeObjectsInArray:answers];
     }
@@ -359,7 +374,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Gets all of the pending reject call responses, actions on each one and then deletes them all from pendingCallResponses
         NSArray *rejects = [pendingCallResponses filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", PENDING_RESPONSE_REJECT]];
         for (NSDictionary *reject in rejects) {
-            [self triggerCordovaEventForCallResponse:@"reject" callId:reject[@"callId"]];
+            [self triggerCordovaEventForCallResponse:@"reject" sessionId:reject[@"sessionId"]];
         }
         [pendingCallResponses removeObjectsInArray:rejects];
     }
@@ -369,19 +384,19 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"mute"];
     __block CDVPluginResult* pluginResult = nil;
-    NSString* callId = [command.arguments objectAtIndex:0];
-    CXCall *call = [self callForCallId:callId];
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
         [self logMessage:@"Programatically Muting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                self.activeCalls[callId][@"muted"] = @YES;
+                self.activeCalls[sessionId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
             [self logMessage:@"Error occurred muting Call"];
-                self.activeCalls[callId][@"muted"] = @NO;
+                self.activeCalls[sessionId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -396,19 +411,19 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"unmute"];
     __block CDVPluginResult* pluginResult = nil;
-    NSString* callId = [command.arguments objectAtIndex:0];
-    CXCall *call = [self callForCallId:callId];
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
         [self logMessage:@"Programatically Unmuting Call"];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                self.activeCalls[callId][@"muted"] = @NO;
+                self.activeCalls[sessionId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
             [self logMessage:@"Error occurred unmuting Call"];
-                self.activeCalls[callId][@"muted"] = @YES;
+                self.activeCalls[sessionId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -569,16 +584,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self setupAudioSession];
     [action fulfill];
 
-    NSString *callId = [self callIdForUUID:action.callUUID];
+    NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     if ([callbackIds[@"answer"] count] == 0) {
         // callbackId for event not registered, add to pending to trigger on registration
         NSDictionary *pendingResponse = @{
             @"type": PENDING_RESPONSE_ANSWER,
-            @"callId": callId
+            @"sessionId": sessionId
         };
         [pendingCallResponses addObject:pendingResponse];
     } else {
-        [self triggerCordovaEventForCallResponse:@"answer" callId:callId];
+        [self triggerCordovaEventForCallResponse:@"answer" sessionId:sessionId];
     }
 
     UIApplication *app = [UIApplication sharedApplication];
@@ -597,14 +612,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"performEndCallAction"];
     [self stopKeepAlive:nil];
-    NSString *callId = [self callIdForUUID:action.callUUID];
-    CXCall *call = [self callForCallId:callId];
+    NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    CXCall *call = [self callForSessionId:sessionId];
     if(call) {
         if(call.hasConnected) {
             for (id callbackId in callbackIds[@"hangup"]) {
                 CDVPluginResult* pluginResult = nil;
                 // Send to facetalk whihc call was ended
-                NSDictionary *resultDict = @{ @"message": @"hangup event called successfully", @"sessionId": callId };
+                NSDictionary *resultDict = @{ @"message": @"hangup event called successfully", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
                 [pluginResult setKeepCallbackAsBool:YES];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
@@ -614,23 +629,23 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 // callbackId for event not registered, add to pending to trigger on registration
                 NSDictionary *pendingResponse = @{
                     @"type": PENDING_RESPONSE_REJECT,
-                    @"callId": callId
+                    @"sessionId": sessionId
                 };
                 [pendingCallResponses addObject:pendingResponse];
             } else {
-                [self triggerCordovaEventForCallResponse:@"reject" callId:callId];
+                [self triggerCordovaEventForCallResponse:@"reject" sessionId:sessionId];
             }
         }
-        [self.activeCalls removeObjectForKey:callId]; // clear out the call once it's ended
+        [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
     }
     monitorAudioRouteChange = NO;
     [action fulfill];
 }
 
-- (void)triggerCordovaEventForCallResponse:(NSString*) response callId:(NSString*)callId {
+- (void)triggerCordovaEventForCallResponse:(NSString*) response sessionId:(NSString*)sessionId {
     if ([@[@"answer", @"reject"] containsObject:response]) {
         for (id callbackId in callbackIds[response]) {
-            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:self.activeCalls[callId][@"callData"]];
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:self.activeCalls[sessionId][@"callData"]];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }
@@ -640,21 +655,21 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
     BOOL isMuted = action.muted;
-    NSString *callId = [self callIdForUUID:action.callUUID];
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", [self.activeCalls[callId][@"muted"] boolValue] ? @"muted" : @"unmuted"]];
+    NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@", isMuted ? @"mute" : @"unmute", [self.activeCalls[sessionId][@"muted"] boolValue] ? @"muted" : @"unmuted"]];
     [action fulfill];
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
-    if ([self.activeCalls[callId][@"muted"] boolValue] == isMuted) {
+    if ([self.activeCalls[sessionId][@"muted"] boolValue] == isMuted) {
         [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isMuted ? @"mute" : @"unmute"]];
         return;
     }
-    self.activeCalls[callId][@"muted"] = @(isMuted); // Update the internal state with the new value
+    self.activeCalls[sessionId][@"muted"] = @(isMuted); // Update the internal state with the new value
     for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
         [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
         CDVPluginResult* pluginResult = nil;
         // Send to facetalk which call was muted/unmuted
-        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": callId };
+        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": sessionId };
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
@@ -678,8 +693,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"dismissRingingCall"];
     
-    NSString *callId = [command.arguments objectAtIndex:0];
-    BOOL didDismiss = [self _dismissRingingCall:callId];
+    NSString *sessionId = [command.arguments objectAtIndex:0];
+    BOOL didDismiss = [self _dismissRingingCall:sessionId];
     CDVPluginResult* pluginResult = nil;
     if (didDismiss) {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
@@ -693,10 +708,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Internal method that can be called from within the plugin
-- (BOOL)_dismissRingingCall:(NSString *)callId {
+- (BOOL)_dismissRingingCall:(NSString *)sessionId {
     [self logMessage:@"_dismissRingingCall"];
 
-    CXCall *call = [self callForCallId:callId];
+    CXCall *call = [self callForSessionId:sessionId];
     if (call && !call.hasConnected) {
         [self.provider reportCallWithUUID:call.UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
         return YES;
@@ -704,9 +719,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     return NO;
 }
 
-// Returns the Callkit CXCall instance for a callId/sessionId
-- (CXCall *)callForCallId:(NSString *)callId {
-    NSUUID *callUUID = self.activeCalls[callId][@"callUUID"];
+// Returns the Callkit CXCall instance for a sessionId
+- (CXCall *)callForSessionId:(NSString *)sessionId {
+    NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
     if (!callUUID) return nil;
 
     NSArray<CXCall *> *calls = self.callController.callObserver.calls;
@@ -718,14 +733,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     return nil;
 }
 
-// Maps the callkit internal callUUID with the facetalk callId/sessionId
+// Maps the callkit internal callUUID with the facetalk sessionId
 // Needed because any actions from callkit UI returns only callkit internal callUUID
-- (nullable NSString *)callIdForUUID:(NSUUID *)callUUID {
+- (nullable NSString *)sessionIdForUUID:(NSUUID *)callUUID {
     if (!callUUID) return nil;
 
-    for (NSString *callId in self.activeCalls) {
-        if ([self.activeCalls[callId][@"callUUID"] isEqual:callUUID]) {
-            return callId;
+    for (NSString *sessionId in self.activeCalls) {
+        if ([self.activeCalls[sessionId][@"callUUID"] isEqual:callUUID]) {
+            return sessionId;
         }
     }
     return nil;
@@ -962,16 +977,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
         return;
     }
-    // call_id is the first part of the call_uuid separated by ;  IE: call_id;ftag;ttag
-    NSString *callId = [[[payloadObj valueForKey:@"call_uuid"] componentsSeparatedByString:@";"] firstObject];
-    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], callId, nil];
+    // sessionId is the first part of the call_uuid separated by ;  IE: call_id;ftag;ttag
+    NSString *sessionId = [[[payloadObj valueForKey:@"call_uuid"] componentsSeparatedByString:@";"] firstObject];
+    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], nil, sessionId];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
     
     // Store URL and Call Id so they can be used for call Answer/Reject
     callBackUrl = [payloadObj valueForKey:@"callback_url"];
     NSString *Type = [payloadObj valueForKey:@"type"];
     hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
-    self.activeCalls[callId] = [@{
+    self.activeCalls[sessionId] = [@{
         @"callData": [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding],
         @"callUUID": [[NSUUID alloc] init],
         @"muted": @NO
