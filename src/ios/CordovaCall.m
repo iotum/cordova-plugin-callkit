@@ -982,8 +982,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
         return;
     }
-    // sessionId is the first part of the call_uuid separated by ;  IE: call_id;ftag;ttag
-    NSString *sessionId = [[[payloadObj valueForKey:@"call_uuid"] componentsSeparatedByString:@";"] firstObject];
+    // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
+    NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
     NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
     
