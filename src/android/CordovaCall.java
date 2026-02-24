@@ -151,7 +151,7 @@ public class CordovaCall extends CordovaPlugin {
         instance = this;
     }
 
-    public void setMainActivityInForegound(boolean isInForeground) {
+    public void setMainActivityInForeground(boolean isInForeground) {
         isMainActivityInForeground = isInForeground;
         // Notify all listeners:
         for (final Runnable listener : mainActivityForegroundListeners) {
@@ -179,13 +179,13 @@ public class CordovaCall extends CordovaPlugin {
         if (this.pendingAction != null) {
             this.checkCallPermission();
         }
-        setMainActivityInForegound(true);
+        setMainActivityInForeground(true);
     }
 
     @Override
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
-        setMainActivityInForegound(false);
+        setMainActivityInForeground(false);
     }
 
     @Override
@@ -449,20 +449,47 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void speakerOn() {
-        this.setConnectionAudioRoute(CallAudioState.ROUTE_SPEAKER);
+        Connection conn = MyConnectionService.getConnection();
+        this.setConnectionAudioRoute(conn, CallAudioState.ROUTE_SPEAKER);
     }
 
     private void speakerOff() {
-        this.setConnectionAudioRoute(CallAudioState.ROUTE_EARPIECE);
+        Connection conn = MyConnectionService.getConnection();
+        CallAudioState state = conn != null ? conn.getCallAudioState() : null;
+        if (state == null) {
+            this.setConnectionAudioRoute(null, -1);
+            return;
+        }
+
+        int supportedRoutes = state.getSupportedRouteMask();
+        if ((supportedRoutes & CallAudioState.ROUTE_BLUETOOTH) != 0) {
+            this.setConnectionAudioRoute(conn, CallAudioState.ROUTE_BLUETOOTH);
+        } else if ((supportedRoutes & CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
+            this.setConnectionAudioRoute(conn, CallAudioState.ROUTE_WIRED_HEADSET);
+        } else if ((supportedRoutes & CallAudioState.ROUTE_EARPIECE) != 0) {
+            this.setConnectionAudioRoute(conn, CallAudioState.ROUTE_EARPIECE);
+        } else {
+            this.setConnectionAudioRoute(conn, -1);
+        }
     }
 
-    private void setConnectionAudioRoute(int route) {
-        Connection conn = MyConnectionService.getConnection();
-        if (conn != null) {
+    private void setConnectionAudioRoute(Connection conn, int route) {
+        if (conn != null && route >= 0) {
             conn.setAudioRoute(route);
+            Log.i(TAG, "setConnectionAudioRoute: " + getRouteName(route));
             this.callbackContext.success("Connection audio route changed to: " + route);
         } else {
             this.callbackContext.error("No active connection");
+        }
+    }
+
+    private String getRouteName(int route) {
+        switch (route) {
+            case CallAudioState.ROUTE_EARPIECE: return "Earpiece";
+            case CallAudioState.ROUTE_BLUETOOTH: return "Bluetooth";
+            case CallAudioState.ROUTE_SPEAKER: return "Speaker";
+            case CallAudioState.ROUTE_WIRED_HEADSET: return "Wired Headset";
+            default: return "Unknown";
         }
     }
 
