@@ -42,7 +42,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableSet *handleTypes = [[NSMutableSet alloc] init];
     [handleTypes addObject:@(CXHandleTypePhoneNumber)];
     providerConfiguration.supportedHandleTypes = handleTypes;
-    providerConfiguration.supportsVideo = YES;
+    providerConfiguration.supportsVideo = hasVideo;
     if (@available(iOS 11.0, *)) {
         providerConfiguration.includesCallsInRecents = NO;
     }
@@ -62,6 +62,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [callbackIds setObject:[NSMutableArray array] forKey:@"speakerOn"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"speakerOff"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"DTMF"];
+    [callbackIds setObject:[NSMutableArray array] forKey:@"hold"];
+    [callbackIds setObject:[NSMutableArray array] forKey:@"unhold"];
     
     // Add call response (answer or reject) to pending if event listeners are not added at the time of responding
     pendingCallResponses = [NSMutableArray new];
@@ -248,7 +250,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.localizedCallerName = callName;
         callUpdate.supportsGrouping = NO;
         callUpdate.supportsUngrouping = NO;
-        callUpdate.supportsHolding = NO;
+        callUpdate.supportsHolding = YES;
         callUpdate.supportsDTMF = enableDTMF;
         [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
             if(error == nil) {
@@ -315,6 +317,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if(call && !call.hasConnected) {
         [self.provider reportOutgoingCallWithUUID:call.UUID connectedAtDate:nil];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
+
+        CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+        callUpdate.hasVideo = hasVideo;
+        callUpdate.supportsGrouping = NO;
+        callUpdate.supportsUngrouping = NO;
+        callUpdate.supportsHolding = YES;
+        callUpdate.supportsDTMF = enableDTMF;
+        
+        [self.provider reportCallWithUUID:call.UUID updated:callUpdate];
     } else {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
     }
@@ -546,11 +557,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self setupAudioSession];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = action.handle;
-    callUpdate.hasVideo = action.video;
+    callUpdate.hasVideo = hasVideo;
     callUpdate.localizedCallerName = action.contactIdentifier;
     callUpdate.supportsGrouping = NO;
     callUpdate.supportsUngrouping = NO;
-    callUpdate.supportsHolding = NO;
+    callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
     
     [self.provider reportCallWithUUID:action.callUUID updated:callUpdate];
@@ -684,6 +695,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     for (id callbackId in callbackIds[@"DTMF"]) {
         CDVPluginResult* pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:digits];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+    }
+}
+
+- (void)provider:(CXProvider *)provider performSetHeldCallAction:(CXSetHeldCallAction *)action
+{
+    [self logMessage:@"performSetHeldCallAction"];
+    NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event", action.onHold ? @"hold" : @"unhold"]];
+    BOOL isOnHold = action.onHold;
+    [action fulfill];
+    for (id callbackId in callbackIds[isOnHold?@"hold":@"unhold"]) {
+        CDVPluginResult* pluginResult = nil;
+        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isOnHold ? @"hold" : @"unhold"], @"sessionId": sessionId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
