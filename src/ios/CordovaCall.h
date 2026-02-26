@@ -15,6 +15,7 @@
 // CallKit
 @property (nonatomic, strong) CXProvider *provider;
 @property (nonatomic, strong) CXCallController *callController;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *activeCalls; // Stores each active call, mapped by call ID
 
 - (void)updateProviderConfig;
 - (void)setupAudioSession;
@@ -36,6 +37,16 @@
 - (void)speakerOn:(CDVInvokedUrlCommand*)command;
 - (void)speakerOff:(CDVInvokedUrlCommand*)command;
 - (void)callNumber:(CDVInvokedUrlCommand*)command;
+- (void)dismissRingingCall:(CDVInvokedUrlCommand*)command;
+- (void)keepAlive:(CDVInvokedUrlCommand*)command;
+- (void)stopKeepAlive:(CDVInvokedUrlCommand*)command;
+- (void)keepAliveInBackground:(CDVInvokedUrlCommand*)command;
+- (void)stopKeepAliveInBackground:(CDVInvokedUrlCommand*)command;
+- (void)wsConnect:(CDVInvokedUrlCommand*)command;
+- (void)wsAddListeners:(CDVInvokedUrlCommand*)command;
+- (void)wsSend:(CDVInvokedUrlCommand*)command;
+- (void)wsClose:(CDVInvokedUrlCommand*)command;
+- (void)log:(CDVInvokedUrlCommand*)command;
 
 - (void)receiveCallFromRecents:(NSNotification *) notification;
 - (void)handleAudioRouteChange:(NSNotification *) notification;

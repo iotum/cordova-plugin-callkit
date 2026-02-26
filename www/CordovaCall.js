@@ -36,7 +36,7 @@ exports.setVideo = function (value, success, error) {
   }
 };
 
-exports.receiveCall = function (from, id, success, error) {
+exports.receiveCall = function (sessionId, from, id, success, error) {
   if (typeof id == "function") {
     error = success;
     success = id;
@@ -44,10 +44,10 @@ exports.receiveCall = function (from, id, success, error) {
   } else if (id) {
     id = id.toString();
   }
-  exec(success, error, "CordovaCall", "receiveCall", [from, id]);
+  exec(success, error, "CordovaCall", "receiveCall", [from, id, sessionId]);
 };
 
-exports.sendCall = function (to, id, success, error) {
+exports.sendCall = function (sessionId, to, id, success, error) {
   if (typeof id == "function") {
     error = success;
     success = id;
@@ -55,23 +55,23 @@ exports.sendCall = function (to, id, success, error) {
   } else if (id) {
     id = id.toString();
   }
-  exec(success, error, "CordovaCall", "sendCall", [to, id]);
+  exec(success, error, "CordovaCall", "sendCall", [to, id, sessionId]);
 };
 
-exports.connectCall = function (success, error) {
-  exec(success, error, "CordovaCall", "connectCall", []);
+exports.connectCall = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "connectCall", [sessionId]);
 };
 
-exports.endCall = function (success, error) {
-  exec(success, error, "CordovaCall", "endCall", []);
+exports.endCall = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "endCall", [sessionId]);
 };
 
-exports.mute = function (success, error) {
-  exec(success, error, "CordovaCall", "mute", []);
+exports.mute = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "mute", [sessionId]);
 };
 
-exports.unmute = function (success, error) {
-  exec(success, error, "CordovaCall", "unmute", []);
+exports.unmute = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "unmute", [sessionId]);
 };
 
 exports.speakerOn = function (success, error) {
@@ -107,8 +107,8 @@ exports.openFullScreenIntentSettings = function (success, error) {
   exec(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
 };
 
-exports.dismissRingingCall = function (success) {
-  exec(success, null, "CordovaCall", "dismissRingingCall", []);
+exports.dismissRingingCall = function (sessionId, success) {
+  exec(success, null, "CordovaCall", "dismissRingingCall", [sessionId]);
 }
 
 // iOS Only Functions
