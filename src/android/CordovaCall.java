@@ -55,6 +55,8 @@ public class CordovaCall extends CordovaPlugin {
     private JSONArray pendingActionArgs;
     private TelecomManager tm;
 
+    private boolean requestCamera;
+
     private CallbackContext callbackContext;
     private String appName;
     private String from;
@@ -202,10 +204,7 @@ public class CordovaCall extends CordovaPlugin {
                 }
             } else {
                 from = args.getString(0);
-                permissionCounter = 2;
-                pendingAction = "receiveCall";
-                pendingActionArgs = args;
-                this.checkCallPermission();
+                this.receiveCall();
             }
             return true;
         } else if (action.equals("sendCall")) {
@@ -220,10 +219,14 @@ public class CordovaCall extends CordovaPlugin {
                 }
             } else {
                 to = args.getString(0);
-                permissionCounter = 2;
-                pendingAction = "sendCall";
-                pendingActionArgs = args;
-                this.checkCallPermission();
+
+                // Client web app should request this permission before hand
+                if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+                    this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
+                    return true;
+                }
+
+                this.sendCall();
             }
             return true;
         } else if (action.equals("connectCall")) {
@@ -317,6 +320,8 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("checkCallPermission")) {
             permissionCounter = 2;
+            this.pendingAction = "checkCallPermission";
+            this.pendingActionArgs = args;
             this.checkCallPermission();
             return true;
         } else if (action.equals("canUseFullScreenIntent")) {
@@ -355,9 +360,6 @@ public class CordovaCall extends CordovaPlugin {
         if(permissionCounter >= 1) {
             // Check READ_PHONE_NUMBERS permission
             if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
-                if (this.pendingAction != null) {
-                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
-                }
                 return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
             }
 
@@ -367,28 +369,14 @@ public class CordovaCall extends CordovaPlugin {
                 return; // Return here and continue in onRequestPermissionResult
             }
 
-            Boolean requestCamera = false;
-            try {
-                requestCamera = "sendCall".equals(this.pendingAction) && this.pendingActionArgs.getString(1).startsWith("meeting");
-            } catch (JSONException e) {
-                // Because pendingActionArgs is a JSON array we must either declare this function throws JSONExceptions or suround with try/catch
-                throw new RuntimeException(e);
-            }
-
-            if (requestCamera && !CordovaCall.getCordova().hasPermission(Manifest.permission.CAMERA)) {
+            if (this.requestCamera && !CordovaCall.getCordova().hasPermission(Manifest.permission.CAMERA)) {
                 cordova.requestPermission(this, CAMERA_REQ_CODE, Manifest.permission.CAMERA);
                 return; // Return here and continue in onRequestPermissionResult
             }
 
             PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
             PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
-            if(currentPhoneAccount.isEnabled()) {
-                if(pendingAction == "receiveCall") {
-                    this.receiveCall();
-                } else if(pendingAction == "sendCall") {
-                    this.sendCall();
-                }
-            } else {
+            if(currentPhoneAccount.isEnabled() == false) {
                 if(permissionCounter == 2) {
                     Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
                     phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
