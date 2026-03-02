@@ -335,7 +335,7 @@ public class CordovaCall extends CordovaPlugin {
 
         PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
         PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
-        if(!currentPhoneAccount.isEnabled()) {
+        if (currentPhoneAccount == null || !currentPhoneAccount.isEnabled()) {
             Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
             phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
