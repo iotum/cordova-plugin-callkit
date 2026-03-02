@@ -362,12 +362,6 @@ public class CordovaCall extends CordovaPlugin {
             return; // Important: as attempting do tm.placeCall() without permission crashes the entire app
         }
 
-        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.MANAGE_OWN_CALLS)) {
-            // This should in theory never happen - assuming no one removes MANAGE_OWN_CALLS from the android manifest
-            this.callbackContext.error("MANAGE_OWN_CALLS permission not declared - required in order to use TelecomManager.placeCall()");
-            return;
-        }
-
         Uri uri = Uri.fromParts("tel", to, null);
         Bundle callInfoBundle = new Bundle();
         callInfoBundle.putString("to",to);
@@ -384,7 +378,13 @@ public class CordovaCall extends CordovaPlugin {
             this.callbackContext.error("no_phone_account_enabled");
             return;
         }
-        
+
+        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.MANAGE_OWN_CALLS)) {
+            // This should in theory never happen - assuming no one removes MANAGE_OWN_CALLS from the android manifest
+            this.callbackContext.error("MANAGE_OWN_CALLS permission not declared - required in order to use TelecomManager.placeCall()");
+            return;
+        }
+
         tm.placeCall(uri, callInfo); // Triggers sometime later, an onCreateOutgoingConnection callback to your ConnectionService
 
         this.callbackContext.success("Outgoing call successful");
