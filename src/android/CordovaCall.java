@@ -199,13 +199,6 @@ public class CordovaCall extends CordovaPlugin {
                 }
             } else {
                 to = args.getString(0);
-
-                // Client web app should request this permission before hand
-                if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
-                    this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
-                    return true;
-                }
-
                 this.sendCall();
             }
             return true;
@@ -334,6 +327,7 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void checkCallPermission() {
+        // Your client web app should have already checked/requested the READ_PHONE_NUMBERS runtime permission before hand.
         if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
             this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
             return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
@@ -362,6 +356,12 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void sendCall() {
+        // Your client web app should have already checked/requested READ_PHONE_NUMBERS before hand
+        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+            this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
+            return true; // Important: as attempting do tm.placeCall() without permission crashes the entire app
+        }
+    
         Uri uri = Uri.fromParts("tel", to, null);
         Bundle callInfoBundle = new Bundle();
         callInfoBundle.putString("to",to);
