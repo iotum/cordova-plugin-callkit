@@ -359,7 +359,7 @@ public class CordovaCall extends CordovaPlugin {
         // Your client web app should have already checked/requested READ_PHONE_NUMBERS before hand
         if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
             this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
-            return true; // Important: as attempting do tm.placeCall() without permission crashes the entire app
+            return; // Important: as attempting do tm.placeCall() without permission crashes the entire app
         }
     
         Uri uri = Uri.fromParts("tel", to, null);
