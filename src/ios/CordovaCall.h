@@ -37,6 +37,8 @@
 - (void)speakerOn:(CDVInvokedUrlCommand*)command;
 - (void)speakerOff:(CDVInvokedUrlCommand*)command;
 - (void)callNumber:(CDVInvokedUrlCommand*)command;
+- (void)hold:(CDVInvokedUrlCommand*)command;
+- (void)unhold:(CDVInvokedUrlCommand*)command;
 - (void)dismissRingingCall:(CDVInvokedUrlCommand*)command;
 - (void)keepAlive:(CDVInvokedUrlCommand*)command;
 - (void)stopKeepAlive:(CDVInvokedUrlCommand*)command;

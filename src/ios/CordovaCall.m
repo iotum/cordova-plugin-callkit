@@ -406,7 +406,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 self.activeCalls[sessionId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
-            [self logMessage:@"Error occurred muting Call"];
+                [self logMessage:@"Error occurred muting Call"];
                 self.activeCalls[sessionId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
@@ -433,7 +433,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 self.activeCalls[sessionId][@"muted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
-            [self logMessage:@"Error occurred unmuting Call"];
+                [self logMessage:@"Error occurred unmuting Call"];
                 self.activeCalls[sessionId][@"muted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
@@ -543,6 +543,60 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
         }
     }
+}
+
+- (void)hold:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"hold"];
+    __block CDVPluginResult* pluginResult = nil;
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
+    if (call) {
+        CXSetHeldCallAction *holdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:YES];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:holdAction];
+        [self logMessage:@"Programatically Holding Call"];
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            } else {
+                [self logMessage:@"Error occurred holding Call"];
+                NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+            }
+        }];
+    } else {
+        NSDictionary *resultDict = @{ @"message": @"no active call to hold", @"sessionId": sessionId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)unhold:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"unhold"];
+    __block CDVPluginResult* pluginResult = nil;
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
+    if (call) {
+        CXSetHeldCallAction *unholdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:NO];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unholdAction];
+        [self logMessage:@"Programatically Unholding Call"];
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            } else {
+                [self logMessage:@"Error occurred unholding Call"];
+                NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+            }
+        }];
+    } else {
+        NSDictionary *resultDict = @{ @"message": @"no active call to unhold", @"sessionId": sessionId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 // CallKit - Provider
@@ -707,6 +761,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event", action.onHold ? @"hold" : @"unhold"]];
     BOOL isOnHold = action.onHold;
     [action fulfill];
+
+    // Ignore the duplicate hold/unhold events to prevent feedback loops
+    CXCall *call = [self callForUUID:action.callUUID];
+    if ([call isOnHold] == isOnHold) {
+        [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isOnHold ? @"hold" : @"unhold"]];
+        return;
+    }
     for (id callbackId in callbackIds[isOnHold?@"hold":@"unhold"]) {
         CDVPluginResult* pluginResult = nil;
         NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isOnHold ? @"hold" : @"unhold"], @"sessionId": sessionId };
@@ -744,6 +805,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return YES;
     }
     return NO;
+}
+
+// Returns the Callkit CXCall instance for a CallUUID
+- (CXCall *)callForUUID:(NSUUID *)callUUID {
+    if (!callUUID) return nil;
+    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
+    for (CXCall *call in calls) {
+        if ([call.UUID isEqual:callUUID]) {
+            return call;
+        }
+    }
+    return nil;
 }
 
 // Returns the Callkit CXCall instance for a sessionId
