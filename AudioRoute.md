@@ -101,7 +101,7 @@ CordovaCall.getAudioRoute(
 ```javascript
 {
   "route": "speaker",                    // Standardized route constant
-  "changeType": "DEVICE_CHANGED"         // Type of change
+  "changeType": "deviceChanged"         // Type of change
 }
 ```
 
@@ -109,7 +109,7 @@ CordovaCall.getAudioRoute(
 ```javascript
 {
   "route": "bluetooth",
-  "changeType": "DEVICE_CHANGED", 
+  "changeType": "deviceChanged", 
   "supportedRoutes": 7,                // Integer bitmask from CallAudioState.getSupportedRouteMask()
   "isMuted": false
 }
