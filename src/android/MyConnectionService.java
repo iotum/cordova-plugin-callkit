@@ -233,118 +233,7 @@ public class MyConnectionService extends ConnectionService {
 
         connectionAddedMap.remove(callUUID);
 
-        final Connection connection = new Connection() {
-            IncomingCallNotification incomingCallNotification;
-            Runnable mainActivityChangeListener;
-
-            @Override
-            public void onShowIncomingCallUi() { // Only for self managed connections
-                Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
-                this.setRinging();
-
-                this.incomingCallNotification = new IncomingCallNotification(payloadString, getApplicationContext());
-                Notification notification = this.incomingCallNotification.build();
-
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.notify(this.incomingCallNotification.getNotificationID(), notification);
-            }
-
-            public void cancelIncomingCallNotification() {
-                if (this.incomingCallNotification == null) {
-                    return;
-                }
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(this.incomingCallNotification.getNotificationID());
-                this.incomingCallNotification = null;
-            }
-
-            @Override
-            public void onAnswer() {
-                Log.d(TAG, "onAnswer()");
-
-                cancelIncomingCallNotification();
-
-                this.setActive();
-                activeConnectionUUID = callUUID;
-
-                showWebApp("answerCall", payloadString);
-
-                Log.d(TAG, "Starting CallAudioService...");
-                Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-                intent.putExtra("peerName", callerName);
-                startForegroundService(intent);
-
-                Log.d(TAG, "Emitting CordovaCall answer event...");
-                CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
-            }
-
-            @Override
-            public void onReject() {
-                Log.d(TAG, "onReject, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
-
-                showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
-
-                CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
-            }
-
-            @Override
-            public void onAbort() {
-                Log.d(TAG, "onAbort, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-            }
-
-            @Override
-            public void onDisconnect() {
-                Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
-                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
-            }
-
-            @Override
-            public void onStateChanged(int state) {
-                super.onStateChanged(state);
-                Log.d(TAG, "connection onStateChanged: " + state);
-
-                switch (state) {
-                    case Connection.STATE_ACTIVE:
-                        // Call connected, start audio monitoring
-                        CordovaCall.onCallConnected();
-                        break;
-                    case Connection.STATE_DISCONNECTED:
-                        connectionMap.remove(callUUID);
-                        if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
-                            activeConnectionUUID = null;
-                        }
-                        if (this.mainActivityChangeListener != null) {
-                            CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
-                        }
-                        this.destroy();
-                        CordovaCall.onCallEnded(); // Stop audio monitoring if needed
-
-                        cancelIncomingCallNotification();
-
-                        Log.d(TAG, "Stopping CallAudioService...");
-                        Context context = getApplicationContext();
-                        Intent serviceIntent = new Intent(context, CallAudioService.class);
-                        context.stopService(serviceIntent);
-                        break;
-                }
-
-                Log.d(TAG, "broadcasting connection_state_changed call_uuid: " + callUUID + " state: " + state);
-                Intent intent = new Intent("connection_state_changed");
-                intent.putExtra("call_uuid", callUUID);
-                intent.putExtra("state", state);
-                Context context = getApplicationContext();
-                LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
-            }
-
-            @Override
-            public void onCallAudioStateChanged(CallAudioState state) {
-                super.onCallAudioStateChanged(state);
-                handleCallAudioStateChanged(state);
-            }
-        };
+        final IncomingCallConnection connection = new IncomingCallConnection(callUUID, payloadString, callerName);
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
 
@@ -373,56 +262,7 @@ public class MyConnectionService extends ConnectionService {
 
     @Override
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
-        final Connection connection = new Connection() {
-            @Override
-            public void onAnswer() {
-                super.onAnswer();
-            }
-
-            @Override
-            public void onReject() {
-                super.onReject();
-            }
-
-            @Override
-            public void onAbort() {
-                super.onAbort();
-                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-            }
-
-            @Override
-            public void onDisconnect() {
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
-                this.setDisconnected(cause);
-                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
-            }
-
-            @Override
-            public void onCallAudioStateChanged(CallAudioState state) {
-                super.onCallAudioStateChanged(state);
-                handleCallAudioStateChanged(state);
-            }
-
-            @Override
-            public void onStateChanged(int state) {
-                if (state == Connection.STATE_ACTIVE) {
-                    // Call connected, start audio monitoring
-                    CordovaCall.onCallConnected();
-                } else if (state == Connection.STATE_DISCONNECTED) {
-                    // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
-                    // Ensure the connection is destroyed, etc.
-                    this.destroy();
-                    activeOutgoingConnection = null;
-                    activeConnectionUUID = null;
-                    CordovaCall.onCallEnded(); // Stop audio monitoring if needed
-
-                    Log.d(TAG, "Stopping CallAudioService foreground service...");
-                    Context context = getApplicationContext();
-                    Intent serviceIntent = new Intent(context, CallAudioService.class);
-                    context.stopService(serviceIntent);
-                }
-            }
-        };
+        final OutgoingCallConnection connection = new OutgoingCallConnection();
         connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
@@ -450,5 +290,157 @@ public class MyConnectionService extends ConnectionService {
 
         activeOutgoingConnection = connection;
         return connection;
+    }
+
+    /**
+     * Base class for both incoming and outgoing connections.
+     * Holds the common logic shared between IncomingCallConnection and OutgoingCallConnection.
+     */
+    private class CallConnection extends Connection {
+        @Override
+        public void onCallAudioStateChanged(CallAudioState state) {
+            super.onCallAudioStateChanged(state);
+            handleCallAudioStateChanged(state);
+        }
+
+        @Override
+        public void onAbort() {
+            this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+        }
+
+        @Override
+        public void onDisconnect() {
+            this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+            CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
+        }
+
+        @Override
+        public void onStateChanged(int state) {
+            super.onStateChanged(state);
+            if (state == Connection.STATE_ACTIVE) {
+                CordovaCall.onCallConnected();
+            } else if (state == Connection.STATE_DISCONNECTED) {
+                this.destroy();
+                CordovaCall.onCallEnded();
+                Log.d(TAG, "Stopping CallAudioService...");
+                Context context = getApplicationContext();
+                Intent serviceIntent = new Intent(context, CallAudioService.class);
+                context.stopService(serviceIntent);
+            }
+        }
+    }
+
+    private class IncomingCallConnection extends CallConnection {
+        private final String callUUID;
+        private final String payloadString;
+        private final String callerName;
+        private IncomingCallNotification incomingCallNotification;
+        private Runnable mainActivityChangeListener;
+
+        IncomingCallConnection(String callUUID, String payloadString, String callerName) {
+            this.callUUID = callUUID;
+            this.payloadString = payloadString;
+            this.callerName = callerName;
+        }
+
+        @Override
+        public void onShowIncomingCallUi() { // Only for self managed connections
+            Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
+            this.setRinging();
+
+            this.incomingCallNotification = new IncomingCallNotification(payloadString, getApplicationContext());
+            Notification notification = this.incomingCallNotification.build();
+
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.notify(this.incomingCallNotification.getNotificationID(), notification);
+        }
+
+        public void cancelIncomingCallNotification() {
+            if (this.incomingCallNotification == null) {
+                return;
+            }
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.cancel(this.incomingCallNotification.getNotificationID());
+            this.incomingCallNotification = null;
+        }
+
+        @Override
+        public void onAnswer() {
+            Log.d(TAG, "onAnswer()");
+
+            cancelIncomingCallNotification();
+
+            this.setActive();
+            activeConnectionUUID = callUUID;
+
+            showWebApp("answerCall", payloadString);
+
+            Log.d(TAG, "Starting CallAudioService...");
+            Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
+            intent.putExtra("peerName", callerName);
+            startForegroundService(intent);
+
+            Log.d(TAG, "Emitting CordovaCall answer event...");
+            CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
+        }
+
+        @Override
+        public void onReject() {
+            Log.d(TAG, "onReject, call_uuid: " + callUUID);
+            this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
+
+            showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
+
+            CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
+        }
+
+        @Override
+        public void onAbort() {
+            Log.d(TAG, "onAbort, call_uuid: " + callUUID);
+            super.onAbort();
+        }
+
+        @Override
+        public void onDisconnect() {
+            Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
+            super.onDisconnect();
+        }
+
+        @Override
+        public void onStateChanged(int state) {
+            Log.d(TAG, "connection onStateChanged: " + state);
+
+            if (state == Connection.STATE_DISCONNECTED) {
+                connectionMap.remove(callUUID);
+                if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
+                    activeConnectionUUID = null;
+                }
+                if (this.mainActivityChangeListener != null) {
+                    CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
+                }
+                cancelIncomingCallNotification();
+            }
+
+            super.onStateChanged(state);
+
+            Log.d(TAG, "broadcasting connection_state_changed call_uuid: " + callUUID + " state: " + state);
+            Intent intent = new Intent("connection_state_changed");
+            intent.putExtra("call_uuid", callUUID);
+            intent.putExtra("state", state);
+            LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
+        }
+    }
+
+    private class OutgoingCallConnection extends CallConnection {
+        @Override
+        public void onStateChanged(int state) {
+            if (state == Connection.STATE_DISCONNECTED) {
+                // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
+                // Ensure the connection is destroyed, etc.
+                activeOutgoingConnection = null;
+                activeConnectionUUID = null;
+            }
+            super.onStateChanged(state);
+        }
     }
 }
