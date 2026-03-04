@@ -199,10 +199,10 @@ public class MyConnectionService extends ConnectionService {
     void handleCallAudioStateChanged(CallAudioState state) {
         Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
 
-        // Use the centralized method from CordovaCall to emit route change event
-        CordovaCall instance = CordovaCall.getInstance();
-        if (instance != null) {
-            instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
+        // Use the centralized method from AudioRouteMonitor to emit route change event
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
         }
     }
 
