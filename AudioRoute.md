@@ -130,7 +130,7 @@ CordovaCall.getAudioRoute(
   "changeType": "routeChanged",
   "reason": 2,                           // Numeric reason code
   "reasonString": "NewDeviceAvailable",  // Human-readable reason
-  "currentOutputType": "HeadphonesAndMicrophone" // iOS-specific current route
+  "currentOutputType": "AVAudioSessionPortHeadphones" // iOS AVAudioSessionPortDescription.portType value
 }
 ```
 

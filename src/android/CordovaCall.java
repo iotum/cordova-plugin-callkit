@@ -587,7 +587,8 @@ public class CordovaCall extends CordovaPlugin {
     private BroadcastReceiver audioRouteReceiver;
     private static int activeCallCount = 0; // Track number of active calls
 
-    private static void incrementActiveCallCount() {
+    // Call lifecycle methods
+    public static void onCallConnected() {
         activeCallCount++;
         Log.d(TAG, "Active call count incremented to: " + activeCallCount);
         if (activeCallCount == 1 && instance != null) {
@@ -595,7 +596,7 @@ public class CordovaCall extends CordovaPlugin {
         }
     }
 
-    private static void decrementActiveCallCount() {
+    public static void onCallEnded() {
         if (activeCallCount > 0) {
             activeCallCount--;
             Log.d(TAG, "Active call count decremented to: " + activeCallCount);
@@ -604,6 +605,8 @@ public class CordovaCall extends CordovaPlugin {
             }
         } else {
             Log.w(TAG, "Attempted to decrement active call count when already 0");
+        }
+    }
 
     private void startAudioRouteMonitoring() {
         if (audioRouteReceiver == null) {
