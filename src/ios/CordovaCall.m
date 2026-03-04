@@ -546,9 +546,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[AVAudioSessionRouteChangePreviousRouteKey];
         AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
 
-        // Get current and previous output types
+        // Get current output type
         NSString* currentOutputType = @"Unknown";
-        NSString* previousOutputType = @"Unknown";
         NSString* reasonString = [self getRouteChangeReasonString:reason];
 
         if([currentRoute.outputs count] > 0) {
@@ -558,7 +557,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         NSArray* outputs = [previousRouteKey outputs];
         if([outputs count] > 0) {
             AVAudioSessionPortDescription *output = outputs[0];
-            previousOutputType = output.portType;
 
             // Legacy speakerOn/speakerOff events for backward compatibility
             if(![output.portType isEqual:AVAudioSessionPortBuiltInSpeaker] && [currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
@@ -582,13 +580,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         NSDictionary *routeChangeData = @{
             @"reason": reasonValue,
             @"reasonString": reasonString,
-            @"previousOutputType": previousOutputType,
             @"currentOutputType": currentOutputType,
             @"route": [self convertIOSOutputTypeToStandardRoute:currentOutputType],
             @"changeType": @"routeChanged"
         };
 
-        [self logMessage:[NSString stringWithFormat:@"Audio route changed: %@ -> %@ (reason: %@)", previousOutputType, currentOutputType, reasonString]];
+        [self logMessage:[NSString stringWithFormat:@"Audio route changed to: %@ (reason: %@)", currentOutputType, reasonString]];
 
         for (id callbackId in callbackIds[@"audioRouteChange"]) {
             CDVPluginResult* pluginResult = nil;

@@ -7,9 +7,17 @@ This document summarizes the implementation of the `audioRouteChange` event in t
 ## Features Implemented
 
 ### ✅ Cross-Platform audioRouteChange Event
-- **Android**: Uses `TelecomManager`/`CallAudioState` with `BroadcastReceiver` for comprehensive detection
-- **iOS**: Leverages `AVAudioSessionRouteChangeNotification` with enhanced filtering
+- **Android**: Uses `TelecomManager`/`CallAudioState` with modern `AudioManager.getDevices()` API (API 23+) for enhanced device detection
+- **iOS**: Leverages `AVAudioSessionRouteChangeNotification` with Apple's system constants
 - **Detection Scope**: Both physical changes (device connect/disconnect) and programmatic changes (via `setAudioRoute()`)
+- **Concurrent Calls**: Properly handles multiple active calls with shared audio route monitoring
+
+### ✅ Enhanced Device Detection
+- **Modern Android API**: Uses `AudioManager.getDevices()` with `AudioDeviceInfo` for reliable detection (API 23+)
+- **USB-C & USB-A Support**: Detects USB headsets that older methods miss
+- **Wired Headset Types**: Comprehensive detection including `TYPE_WIRED_HEADSET`, `TYPE_WIRED_HEADPHONES`, `TYPE_USB_HEADSET`
+- **Backward Compatibility**: Falls back to deprecated methods for Android < API 23
+- **Multiple Call Support**: Audio route monitoring scales with active call count
 
 ### ✅ Standardized Constants
 Both platforms return identical route constants:
@@ -122,7 +130,6 @@ CordovaCall.getAudioRoute(
   "changeType": "routeChanged",
   "reason": 2,                           // Numeric reason code
   "reasonString": "NewDeviceAvailable",  // Human-readable reason
-  "previousOutputType": "Receiver",      // iOS-specific previous route
   "currentOutputType": "HeadphonesAndMicrophone" // iOS-specific current route
 }
 ```
@@ -131,65 +138,48 @@ CordovaCall.getAudioRoute(
 
 ### Android Implementation
 - **File**: `src/android/CordovaCall.java`
-- **Detection Method**: Dual system using:
-  - `BroadcastReceiver` for physical device changes
+- **Detection Method**: Hybrid approach using:
+  - Modern `AudioManager.getDevices()` API with `AudioDeviceInfo` (API 23+)
+  - `BroadcastReceiver` for physical device changes (headset plug, Bluetooth, USB)
   - `Connection.onCallAudioStateChanged()` for programmatic changes
+  - Fallback to deprecated `isWiredHeadsetOn()` for older Android versions
+- **USB Support**: Enhanced detection for USB-C headsets, USB-A adapters, and USB audio devices
+- **Concurrent Calls**: Active call counting ensures monitoring starts/stops appropriately
 - **Integration**: Works with `MyConnectionService.java` for complete coverage
 
 ### iOS Implementation  
 - **File**: `src/ios/CordovaCall.m`
 - **Detection Method**: `AVAudioSessionRouteChangeNotification`
+- **System Constants**: Uses Apple's official `AVAudioSessionRouteChangeReason*` constants
 - **Filtering**: Enhanced reason filtering to capture all relevant changes
 - **Route Mapping**: Converts iOS-specific output types to standardized constants
-
-## Constants Reference
-
-### iOS Audio Route Change Reasons
-```javascript
-CordovaCall.AudioRouteChangeReason = {
-  UNKNOWN: 1,
-  NEW_DEVICE_AVAILABLE: 2,        // Physical device connected
-  OLD_DEVICE_UNAVAILABLE: 3,      // Physical device disconnected  
-  CATEGORY_CHANGE: 4,
-  OVERRIDE: 5,                    // Programmatic change via speakerOn/Off
-  WAKE_FROM_SLEEP: 6,
-  NO_SUITABLE_ROUTE: 7,
-  ROUTE_CONFIG_CHANGE: 8
-}
-```
-
-### iOS Output Types (Platform-Specific)
-```javascript
-CordovaCall.AudioOutputType = {
-  RECEIVER: 'Receiver',                    // Maps to earpiece
-  SPEAKER: 'Speaker',                      // Maps to speaker
-  HEADPHONES: 'HeadphonesAndMicrophone',   // Maps to wired_headset
-  BLUETOOTH_HFP: 'BluetoothHFP',          // Maps to bluetooth
-  BLUETOOTH_A2DP: 'BluetoothA2DPOutput',
-  AIRPLAY: 'AirPlay',
-  USB_AUDIO: 'USBAudio',
-  UNKNOWN: 'Unknown'
-}
-```
+- **Optimized Data**: Streamlined event data focusing on current route information
 
 ## Benefits
 
 1. **Consistent API**: Same constants and event format across platforms
-2. **Comprehensive Detection**: Captures all route changes regardless of cause  
-3. **Easy Integration**: Simple event listener with standardized data
-4. **Reactive & Proactive**: Both event-based monitoring and current state queries
-5. **Developer Friendly**: JavaScript enum definitions for easy usage
+2. **Modern Android Support**: Uses latest APIs for reliable USB-C and USB headset detection  
+3. **Comprehensive Detection**: Captures all route changes regardless of cause
+4. **Multiple Call Aware**: Properly manages audio monitoring across concurrent calls
+5. **Easy Integration**: Simple event listener with standardized data
+6. **Reactive & Proactive**: Both event-based monitoring and current state queries
+7. **Developer Friendly**: JavaScript enum definitions for easy usage
+8. **Performance Optimized**: Efficient monitoring that scales with call activity
 
 ## Testing
 
 The implementation has been designed to capture:
-- ✅ Physical headphone plug/unplug
+- ✅ Physical headphone plug/unplug (3.5mm and USB-C)
+- ✅ USB headset and adapter detection (USB-A, USB-C)
 - ✅ Bluetooth device connect/disconnect
 - ✅ Programmatic route changes via `speakerOn()`/`speakerOff()`
 - ✅ iOS CallKit route switching
 - ✅ System-initiated route changes
+- ✅ Multiple concurrent call scenarios
+- ✅ Modern Android device compatibility (API 23+)
 
 ---
 
-*Implementation completed: March 2026*
-*Supports: Android API 23+, iOS 10+*
+*Implementation updated: March 2026*
+*Supports: Android API 23+ (with fallback to API 21+), iOS 10+*
+*Enhanced: Modern Android API support, USB-C detection, concurrent call handling*
