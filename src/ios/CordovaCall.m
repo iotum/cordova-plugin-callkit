@@ -564,12 +564,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
             }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
         NSDictionary *resultDict = @{ @"message": @"no active call to hold", @"sessionId": sessionId };
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)unhold:(CDVInvokedUrlCommand*)command
@@ -591,12 +592,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
             }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
         NSDictionary *resultDict = @{ @"message": @"no active call to unhold", @"sessionId": sessionId };
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 // CallKit - Provider
