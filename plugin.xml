@@ -70,7 +70,7 @@
         <source-file src="src/android/CallConnection.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/IncomingCallConnection.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/OutgoingCallConnection.java" target-dir="src/com/dmarc/cordovacall" />
-        <source-file src="src/android/AudioRouteMonitoring.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/AudioRouteMonitor.java" target-dir="src/com/dmarc/cordovacall" />
   </platform>
 
     <platform name="ios">

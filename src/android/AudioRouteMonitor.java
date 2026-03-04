@@ -26,26 +26,26 @@ import java.util.HashMap;
  * audio route using both CallAudioState (when an active Connection exists) and
  * AudioManager as a fallback.
  */
-public class AudioRouteMonitoring {
-    private static final String TAG = "AudioRouteMonitoring";
+public class AudioRouteMonitor {
+    private static final String TAG = "AudioRouteMonitor";
 
     private final CordovaInterface cordova;
     private final AudioManager audioManager;
     private BroadcastReceiver audioRouteReceiver;
 
     private static int activeCallCount = 0;
-    private static AudioRouteMonitoring instance;
+    private static AudioRouteMonitor instance;
 
-    public AudioRouteMonitoring(CordovaInterface cordova, AudioManager audioManager) {
+    public AudioRouteMonitor(CordovaInterface cordova, AudioManager audioManager) {
         this.cordova = cordova;
         this.audioManager = audioManager;
     }
 
-    public static AudioRouteMonitoring getInstance() {
+    public static AudioRouteMonitor getInstance() {
         return instance;
     }
 
-    public static void setInstance(AudioRouteMonitoring inst) {
+    public static void setInstance(AudioRouteMonitor inst) {
         instance = inst;
     }
 
