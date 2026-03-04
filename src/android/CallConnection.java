@@ -41,10 +41,10 @@ class CallConnection extends Connection {
     public void onStateChanged(int state) {
         super.onStateChanged(state);
         if (state == Connection.STATE_ACTIVE) {
-            CordovaCall.onCallConnected();
+            AudioRouteMonitoring.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();
-            CordovaCall.onCallEnded();
+            AudioRouteMonitoring.onCallEnded();
             Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
             Context context = service.getApplicationContext();
             Intent serviceIntent = new Intent(context, CallAudioService.class);
