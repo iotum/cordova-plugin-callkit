@@ -334,7 +334,7 @@ public class MyConnectionService extends ConnectionService {
                 // Use the centralized method from CordovaCall to emit route change event
                 CordovaCall instance = CordovaCall.getInstance();
                 if (instance != null) {
-                    instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
+                    instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.ROUTE_CHANGE);
                 }
             }
         };

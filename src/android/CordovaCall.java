@@ -594,6 +594,19 @@ public class CordovaCall extends CordovaPlugin {
         }
     }
 
+    @Override
+    public void onReset() {
+        // Ensure audio route monitoring is stopped when the WebView is reset
+        stopAudioRouteMonitoring();
+        super.onReset();
+    }
+
+    @Override
+    public void onDestroy() {
+        // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
+        stopAudioRouteMonitoring();
+        super.onDestroy();
+    }
     public void emitCurrentAudioRoute(String changeType) {
         try {
             // Use the centralized route detection method

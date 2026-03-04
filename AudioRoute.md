@@ -110,7 +110,7 @@ CordovaCall.getAudioRoute(
 {
   "route": "bluetooth",
   "changeType": "DEVICE_CHANGED", 
-  "supportedRoutes": ["earpiece", "speaker", "bluetooth"],
+  "supportedRoutes": 7,                // Integer bitmask from CallAudioState.getSupportedRouteMask()
   "isMuted": false
 }
 ```
