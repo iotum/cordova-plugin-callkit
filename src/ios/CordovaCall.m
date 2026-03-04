@@ -73,10 +73,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [callbackIds setObject:[NSMutableArray array] forKey:@"speakerOff"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"DTMF"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"audioRouteChange"];
-    
+
     // Add call response (answer or reject) to pending if event listeners are not added at the time of responding
     pendingCallResponses = [NSMutableArray new];
-    
+
     //allows user to make call from recents
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(receiveCallFromRecents:) name:@"RecentsCallNotification" object:nil];
     //detect Audio Route Changes to make speakerOn and speakerOff event handlers
@@ -95,7 +95,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [_voipRegistry setDelegate:(id<PKPushRegistryDelegate> _Nullable)self];
     // Set the push type to VoIP
     _voipRegistry.desiredPushTypes = [NSSet setWithObject:PKPushTypeVoIP];
-    
+
     // Read VoIPPushToken from UserDefaults
     self.VoIPPushToken = [[NSUserDefaults standardUserDefaults] stringForKey:KEY_VOIP_PUSH_TOKEN];
     webSockets = [[NSMutableDictionary alloc] init];
@@ -292,7 +292,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"callUUID": callUUID,
         @"muted": @NO
     } mutableCopy];
-    
+
     if (hasId) {
         [[NSUserDefaults standardUserDefaults] setObject:callName forKey:[command.arguments objectAtIndex:1]];
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -371,7 +371,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [pluginResult setKeepCallbackAsBool:YES];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    
+
     // In case of registerEvent answer or reject called after responding to call, trigger cordova event for the appropriate answer
     if ([eventName isEqualToString:@"answer"]) {
         // Gets all of the pending answer call responses, actions on each one and then deletes them all from pendingCallResponses
@@ -473,6 +473,28 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)getAudioRoute:(CDVInvokedUrlCommand*)command
+{
+    CDVPluginResult* pluginResult = nil;
+    @try {
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        AVAudioSessionRouteDescription* currentRoute = [sessionInstance currentRoute];
+
+        NSString* currentOutputType = @"Unknown";
+        if([currentRoute.outputs count] > 0) {
+            currentOutputType = [currentRoute.outputs[0] portType];
+        }
+
+        NSString* standardRoute = [self convertIOSOutputTypeToStandardRoute:currentOutputType];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:standardRoute];
+    }
+    @catch (NSException *exception) {
+        [self logMessage:[NSString stringWithFormat:@"Error getting audio route: %@", exception.reason]];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Failed to get current audio route"];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)callNumber:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
@@ -525,29 +547,29 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if(monitorAudioRouteChange) {
         NSNumber* reasonValue = notification.userInfo[@"AVAudioSessionRouteChangeReasonKey"];
         int reason = [reasonValue intValue];
-        
+
         // Filter out unimportant route changes
         if (reason == AudioRouteChangeReasonUnknown || reason == AudioRouteChangeReasonWakeFromSleep || reason == AudioRouteChangeReasonRouteConfigChange) {
             return;
         }
-        
+
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[@"AVAudioSessionRouteChangePreviousRouteKey"];
         AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
-        
+
         // Get current and previous output types
         NSString* currentOutputType = @"Unknown";
         NSString* previousOutputType = @"Unknown";
         NSString* reasonString = [self getRouteChangeReasonString:reason];
-        
+
         if([currentRoute.outputs count] > 0) {
             currentOutputType = [currentRoute.outputs[0] portType];
         }
-        
+
         NSArray* outputs = [previousRouteKey outputs];
         if([outputs count] > 0) {
             AVAudioSessionPortDescription *output = outputs[0];
             previousOutputType = output.portType;
-            
+
             // Legacy speakerOn/speakerOff events for backward compatibility
             if(![output.portType isEqual: @"Speaker"] && [currentOutputType isEqual: @"Speaker"]) {
                 for (id callbackId in callbackIds[@"speakerOn"]) {
@@ -565,7 +587,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 }
             }
         }
-        
+
         // Enhanced audioRouteChange event with comprehensive information
         NSDictionary *routeChangeData = @{
             @"reason": reasonValue,
@@ -573,12 +595,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             @"previousOutputType": previousOutputType,
             @"currentOutputType": currentOutputType,
             @"route": [self convertIOSOutputTypeToStandardRoute:currentOutputType],
-            @"changeType": @"ROUTE_CHANGED",
-            @"message": @"audioRouteChange event called successfully"
+            @"changeType": @"routeChanged"
         };
-        
+
         [self logMessage:[NSString stringWithFormat:@"Audio route changed: %@ -> %@ (reason: %@)", previousOutputType, currentOutputType, reasonString]];
-        
+
         for (id callbackId in callbackIds[@"audioRouteChange"]) {
             CDVPluginResult* pluginResult = nil;
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:routeChangeData];
@@ -591,15 +612,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (NSString*)convertIOSOutputTypeToStandardRoute:(NSString*)iosOutputType
 {
     if ([iosOutputType isEqualToString:@"Receiver"]) {
-        return @"EARPIECE";
+        return @"earpiece";
     } else if ([iosOutputType isEqualToString:@"Speaker"]) {
-        return @"SPEAKER";
+        return @"speaker";
     } else if ([iosOutputType containsString:@"Bluetooth"]) {
-        return @"BLUETOOTH";
+        return @"bluetooth";
     } else if ([iosOutputType containsString:@"Headphones"] || [iosOutputType isEqualToString:@"HeadphonesAndMicrophone"]) {
-        return @"WIRED_HEADSET";
+        return @"wired_headset";
     } else {
-        return @"UNKNOWN";
+        return @"unknown";
     }
 }
 
@@ -636,7 +657,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.supportsUngrouping = NO;
     callUpdate.supportsHolding = NO;
     callUpdate.supportsDTMF = enableDTMF;
-    
+
     [self.provider reportCallWithUUID:action.callUUID updated:callUpdate];
     [action fulfill];
     NSDictionary *callData = @{@"callName":action.contactIdentifier, @"callId": action.handle.value, @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully"};
@@ -685,7 +706,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Have iOS kill the background task after 30s, we don't want this to run
         [self _endBackgroundTask];
     }];
-    
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [self logMessage:@"29 seconds elapsed, ending background task"];
         [self _endBackgroundTask];
@@ -776,7 +797,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"dismissRingingCall"];
-    
+
     NSString *sessionId = [command.arguments objectAtIndex:0];
     BOOL didDismiss = [self _dismissRingingCall:sessionId];
     CDVPluginResult* pluginResult = nil;
@@ -1005,7 +1026,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     self.VoIPPushCallbackId = command.callbackId;
     [self logMessage:[NSString stringWithFormat:@"callbackId: %@", self.VoIPPushCallbackId]];
-    
+
     [self sendTokenPluginResult];
 }
 
@@ -1017,7 +1038,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableDictionary* results = [NSMutableDictionary dictionaryWithCapacity:2];
     [results setObject:self.VoIPPushToken forKey:@"deviceToken"];
     [results setObject:@"true" forKey:@"registration"];
-    
+
     CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:results];
     [pluginResult setKeepCallbackAsBool:YES];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
@@ -1037,10 +1058,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                          ntohl(tokenBytes[0]), ntohl(tokenBytes[1]), ntohl(tokenBytes[2]),
                          ntohl(tokenBytes[3]), ntohl(tokenBytes[4]), ntohl(tokenBytes[5]),
                          ntohl(tokenBytes[6]), ntohl(tokenBytes[7])];
-    
+
     // Store VoIPPushToken in UserDefaults
     [[NSUserDefaults standardUserDefaults] setObject:self.VoIPPushToken forKey:KEY_VOIP_PUSH_TOKEN];
-    
+
     [self sendTokenPluginResult];
 }
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion
@@ -1051,10 +1072,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     NSString *message = payloadDict[@"alert"];
     [self logMessage:[NSString stringWithFormat:@"received VoIP message: %@", message]];
-    
+
     NSDictionary *data = payload.dictionaryPayload[@"data"];
     [self logMessage:[NSString stringWithFormat:@"received data: %@", data]];
-    
+
     NSMutableDictionary* results = [NSMutableDictionary dictionaryWithCapacity:2];
     [results setObject:message forKey:@"function"];
     [results setObject:@"" forKey:@"extra"];
@@ -1070,7 +1091,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
     NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
-    
+
     // Store URL and Call Id so they can be used for call Answer/Reject
     callBackUrl = [payloadObj valueForKey:@"callback_url"];
     NSString *Type = [payloadObj valueForKey:@"type"];
@@ -1117,7 +1138,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)handleRemotePushNotification:(NSNotification *)notification {
     NSDictionary *userInfo = notification.object;
     [self logMessage:[NSString stringWithFormat:@"Received remote notification: %@", userInfo]];
-    
+
     // Checks if payload param is in notification
     NSString *payloadString = userInfo[@"payload"];
     if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {

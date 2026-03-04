@@ -2,18 +2,18 @@ var exec = require('cordova/exec');
 
 // Standardized Audio Route Constants (used by both platforms)
 exports.AudioRoute = {
-  EARPIECE: 'EARPIECE',
-  BLUETOOTH: 'BLUETOOTH', 
-  SPEAKER: 'SPEAKER',
-  WIRED_HEADSET: 'WIRED_HEADSET',
-  UNKNOWN: 'UNKNOWN'
+  EARPIECE: 'earpiece',
+  BLUETOOTH: 'bluetooth', 
+  SPEAKER: 'speaker',
+  WIRED_HEADSET: 'wired_headset',
+  UNKNOWN: 'unknown'
 };
 
 // Audio Route Change Types
 exports.AudioRouteChangeType = {
-  DEVICE_CHANGED: 'DEVICE_CHANGED',
-  PROGRAMMATIC_CHANGE: 'PROGRAMMATIC_CHANGE',
-  ROUTE_CHANGED: 'ROUTE_CHANGED'
+  DEVICE_CHANGED: 'deviceChanged',           // Android: Physical device connect/disconnect
+  PROGRAMMATIC_CHANGE: 'programmaticChange', // Android: Via setAudioRoute() method
+  ROUTE_CHANGED: 'routeChanged'              // iOS: General route change
 };
 
 // iOS Audio Route Change Reasons (iOS specific)
@@ -134,6 +134,10 @@ exports.speakerOff = function (success, error) {
   exec(success, error, "CordovaCall", "speakerOff", []);
 };
 
+exports.getAudioRoute = function (success, error) {
+  exec(success, error, "CordovaCall", "getAudioRoute", []);
+};
+
 exports.callNumber = function (to, success, error) {
   exec(success, error, "CordovaCall", "callNumber", [to]);
 };
@@ -209,64 +213,4 @@ exports.wsSend = function (wsId, message) {
 
 exports.wsClose = function (wsId, code, reason) {
   exec(null, null, "CordovaCall", 'wsClose', [wsId, code, reason]);
-};
-
-// Utility Functions
-exports.parseAudioRouteChangeEvent = function(eventData) {
-  try {
-    // Handle both string and object data
-    var data = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
-    
-    var result = {
-      changeType: data.changeType,
-      message: data.message
-    };
-    
-    // Android format
-    if (data.route) {
-      result.platform = 'android';
-      result.route = data.route;
-      result.supportedRoutes = data.supportedRoutes;
-      result.isMuted = data.isMuted;
-      
-      // Convert Android route to common format
-      result.outputType = exports.androidRouteToOutputType(data.route);
-    }
-    
-    // iOS format  
-    if (data.reason !== undefined) {
-      result.platform = 'ios';
-      result.reason = data.reason;
-      result.reasonString = data.reasonString;
-      result.previousOutputType = data.previousOutputType;
-      result.currentOutputType = data.currentOutputType;
-      
-      // Add convenience properties
-      result.outputType = data.currentOutputType;
-      result.isPhysicalChange = (data.reason === exports.AudioRouteChangeReason.NEW_DEVICE_AVAILABLE || 
-                                data.reason === exports.AudioRouteChangeReason.OLD_DEVICE_UNAVAILABLE);
-      result.isProgrammaticChange = (data.reason === exports.AudioRouteChangeReason.OVERRIDE);
-    }
-    
-    return result;
-  } catch (e) {
-    console.error('Error parsing audio route change event:', e);
-    return eventData;
-  }
-};
-
-// Convert Android route constants to iOS-style output types
-exports.androidRouteToOutputType = function(androidRoute) {
-  switch(androidRoute) {
-    case exports.AudioRoute.EARPIECE:
-      return exports.AudioOutputType.RECEIVER;
-    case exports.AudioRoute.SPEAKER:
-      return exports.AudioOutputType.SPEAKER;
-    case exports.AudioRoute.BLUETOOTH:
-      return exports.AudioOutputType.BLUETOOTH_HFP;
-    case exports.AudioRoute.WIRED_HEADSET:
-      return exports.AudioOutputType.HEADPHONES;
-    default:
-      return exports.AudioOutputType.UNKNOWN;
-  }
 };

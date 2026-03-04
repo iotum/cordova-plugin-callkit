@@ -40,20 +40,20 @@ public class CordovaCall extends CordovaPlugin {
 
     private static String TAG = "CordovaCall";
     public static final int REAL_PHONE_CALL = 1;
-    
+
     // Audio Route Constants (standardized across platforms)
     public static class AudioRoute {
-        public static final String EARPIECE = "EARPIECE";
-        public static final String BLUETOOTH = "BLUETOOTH";
-        public static final String SPEAKER = "SPEAKER";
-        public static final String WIRED_HEADSET = "WIRED_HEADSET";
-        public static final String UNKNOWN = "UNKNOWN";
+        public static final String EARPIECE = "earpiece";
+        public static final String BLUETOOTH = "bluetooth";
+        public static final String SPEAKER = "speaker";
+        public static final String WIRED_HEADSET = "wired_headset";
+        public static final String UNKNOWN = "unknown";
     }
-    
+
     // Audio Route Change Types (standardized across platforms)
     public static class AudioRouteChangeType {
-        public static final String DEVICE_CHANGED = "DEVICE_CHANGED";
-        public static final String PROGRAMMATIC_CHANGE = "PROGRAMMATIC_CHANGE";
+        public static final String DEVICE_CHANGED = "deviceChanged";
+        public static final String PROGRAMMATIC_CHANGE = "programmaticChange";
     }
 
     private TelecomManager tm;
@@ -155,7 +155,7 @@ public class CordovaCall extends CordovaPlugin {
 
         // Initialize AudioManager for audio route change monitoring
         this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        
+
         instance = this;
     }
 
@@ -302,6 +302,9 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("speakerOff")) {
             this.speakerOff();
+            return true;
+        } else if (action.equals("getAudioRoute")) {
+            this.getAudioRoute(callbackContext);
             return true;
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
@@ -454,6 +457,56 @@ public class CordovaCall extends CordovaPlugin {
         }
     }
 
+    private void getAudioRoute(CallbackContext callbackContext) {
+        try {
+            String route = getCurrentAudioRoute();
+            callbackContext.success(route);
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting current audio route: " + e.getMessage());
+            callbackContext.error("Failed to get current audio route");
+        }
+    }
+
+    private String getCurrentAudioRoute() {
+        // Try to get route from active connection first
+        Connection activeConnection = MyConnectionService.getConnection();
+        if (activeConnection != null) {
+            CallAudioState audioState = activeConnection.getCallAudioState();
+            if (audioState != null) {
+                return getRouteNameFromState(audioState.getRoute());
+            }
+        }
+
+        // Fallback to AudioManager to determine current route
+        return getCurrentAudioRouteFromAudioManager();
+    }
+
+    private String getCurrentAudioRouteFromAudioManager() {
+        try {
+            // Check Bluetooth SCO first (highest priority)
+            if (audioManager.isBluetoothScoOn() || audioManager.isBluetoothA2dpOn()) {
+                return AudioRoute.BLUETOOTH;
+            }
+
+            // Check speakerphone
+            if (audioManager.isSpeakerphoneOn()) {
+                return AudioRoute.SPEAKER;
+            }
+
+            // Check wired headset
+            if (audioManager.isWiredHeadsetOn()) {
+                return AudioRoute.WIRED_HEADSET;
+            }
+
+            // Default to earpiece for voice calls
+            return AudioRoute.EARPIECE;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting audio route from AudioManager: " + e.getMessage());
+            return AudioRoute.UNKNOWN;
+        }
+    }
+
     private void setConnectionAudioRoute(Connection conn, int route) {
         if (conn != null && route >= 0) {
             conn.setAudioRoute(route);
@@ -509,23 +562,23 @@ public class CordovaCall extends CordovaPlugin {
 
     // Audio route change monitoring
     private BroadcastReceiver audioRouteReceiver;
-    
+
     private void startAudioRouteMonitoring() {
         if (audioRouteReceiver == null) {
             audioRouteReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
-                    emitCurrentAudioRoute("deviceChanged");
+                    emitCurrentAudioRoute(AudioRouteChangeType.DEVICE_CHANGED);
                 }
             };
-            
+
             IntentFilter filter = new IntentFilter();
             filter.addAction(AudioManager.ACTION_HEADSET_PLUG);
             filter.addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
             }
-            
+
             cordova.getActivity().registerReceiver(audioRouteReceiver, filter);
         }
     }
@@ -540,43 +593,35 @@ public class CordovaCall extends CordovaPlugin {
             audioRouteReceiver = null;
         }
     }
-    
+
     public void emitCurrentAudioRoute(String changeType) {
         try {
+            // Use the centralized route detection method
+            String currentRoute = getCurrentAudioRoute();
+
+            HashMap<String, Object> routeData = new HashMap<>();
+            routeData.put("route", currentRoute);
+            routeData.put("changeType", changeType);
+
+            // Add additional connection info if available
             Connection conn = MyConnectionService.getConnection();
             if (conn != null) {
                 CallAudioState state = conn.getCallAudioState();
                 if (state != null) {
-                    HashMap<String, Object> routeData = new HashMap<>();
-                    routeData.put("route", getRouteNameFromState(state.getRoute()));
                     routeData.put("supportedRoutes", state.getSupportedRouteMask());
                     routeData.put("isMuted", state.isMuted());
-                    routeData.put("changeType", changeType);
-                    routeData.put("message", "audioRouteChange event called successfully");
-                    
-                    JSONObject jsonData = new JSONObject(routeData);
-                    PluginResult result = new PluginResult(PluginResult.Status.OK, jsonData.toString());
-                    
-                    CordovaCall.emitEvent("audioRouteChange", result);
-                    return;
                 }
             }
-            
-            // Fallback to AudioManager if no connection available
-            HashMap<String, Object> routeData = new HashMap<>();
-            routeData.put("route", AudioRoute.UNKNOWN);
-            routeData.put("changeType", changeType);
-            routeData.put("message", "audioRouteChange event called successfully");
-            
+
             JSONObject jsonData = new JSONObject(routeData);
             PluginResult result = new PluginResult(PluginResult.Status.OK, jsonData.toString());
-            
+
             CordovaCall.emitEvent("audioRouteChange", result);
         } catch (Exception e) {
             Log.e(TAG, "Error emitting audio route change event: " + e.getMessage());
         }
     }
-    
+
     private String getRouteNameFromState(int route) {
         switch (route) {
             case CallAudioState.ROUTE_EARPIECE: return AudioRoute.EARPIECE;

@@ -15,20 +15,20 @@ This document summarizes the implementation of the `audioRouteChange` event in t
 Both platforms return identical route constants:
 ```javascript
 CordovaCall.AudioRoute = {
-  EARPIECE: 'EARPIECE',         // Phone earpiece/receiver
-  BLUETOOTH: 'BLUETOOTH',       // Bluetooth headset/device  
-  SPEAKER: 'SPEAKER',           // Built-in speaker
-  WIRED_HEADSET: 'WIRED_HEADSET', // Wired headphones/headset
-  UNKNOWN: 'UNKNOWN'            // Other or unrecognized routes
+  EARPIECE: 'earpiece',         // Phone earpiece/receiver
+  BLUETOOTH: 'bluetooth',       // Bluetooth headset/device  
+  SPEAKER: 'speaker',           // Built-in speaker
+  WIRED_HEADSET: 'wired_headset', // Wired headphones/headset
+  UNKNOWN: 'unknown'            // Other or unrecognized routes
 }
 ```
 
 ### ✅ Change Type Classification
 ```javascript
 CordovaCall.AudioRouteChangeType = {
-  DEVICE_CHANGED: 'DEVICE_CHANGED',           // Physical device connect/disconnect
-  PROGRAMMATIC_CHANGE: 'PROGRAMMATIC_CHANGE', // Via setAudioRoute() method
-  ROUTE_CHANGED: 'ROUTE_CHANGED'              // General route change
+  DEVICE_CHANGED: 'deviceChanged',           // Physical device connect/disconnect
+  PROGRAMMATIC_CHANGE: 'programmaticChange', // Via setAudioRoute() method
+  ROUTE_CHANGED: 'routeChanged'              // General route change
 }
 ```
 
@@ -36,9 +36,7 @@ CordovaCall.AudioRouteChangeType = {
 
 ### Event Registration
 ```javascript
-document.addEventListener('audioRouteChange', function(event) {
-  const data = JSON.parse(event.data);
-  
+CordovaCall.on('audioRouteChange', function(data) {
   console.log('Audio route changed to:', data.route);
   console.log('Change type:', data.changeType);
   
@@ -63,8 +61,38 @@ document.addEventListener('audioRouteChange', function(event) {
 ### Programmatic Route Changes
 ```javascript
 // These will trigger audioRouteChange events
-CordovaCall.speakerOn();   // -> route: "SPEAKER"
-CordovaCall.speakerOff();  // -> route: "EARPIECE" (typically)
+CordovaCall.speakerOn();   // -> route: "speaker"
+CordovaCall.speakerOff();  // -> route: "earpiece" (typically)
+```
+
+### Get Current Audio Route
+```javascript
+// Get the current audio route without triggering events
+CordovaCall.getAudioRoute(
+  function(route) {
+    console.log('Current audio route:', route); // "speaker", "bluetooth", etc.
+    
+    switch(route) {
+      case CordovaCall.AudioRoute.SPEAKER:
+        console.log('Currently using speaker');
+        break;
+      case CordovaCall.AudioRoute.BLUETOOTH:
+        console.log('Currently using Bluetooth');
+        break;
+      case CordovaCall.AudioRoute.EARPIECE:
+        console.log('Currently using earpiece');
+        break;
+      case CordovaCall.AudioRoute.WIRED_HEADSET:
+        console.log('Currently using wired headset');
+        break;
+      default:
+        console.log('Unknown route:', route);
+    }
+  },
+  function(error) {
+    console.error('Failed to get audio route:', error);
+  }
+);
 ```
 
 ## Event Data Format
@@ -72,50 +100,31 @@ CordovaCall.speakerOff();  // -> route: "EARPIECE" (typically)
 ### Common Properties (Both Platforms)
 ```javascript
 {
-  "route": "SPEAKER",                    // Standardized route constant
-  "changeType": "DEVICE_CHANGED",        // Type of change
-  "message": "audioRouteChange event called successfully"
+  "route": "speaker",                    // Standardized route constant
+  "changeType": "DEVICE_CHANGED"         // Type of change
 }
 ```
 
 ### Android-Specific Properties
 ```javascript
 {
-  "route": "BLUETOOTH",
+  "route": "bluetooth",
   "changeType": "DEVICE_CHANGED", 
-  "supportedRoutes": ["EARPIECE", "SPEAKER", "BLUETOOTH"],
-  "isMuted": false,
-  "message": "audioRouteChange event called successfully"
+  "supportedRoutes": ["earpiece", "speaker", "bluetooth"],
+  "isMuted": false
 }
 ```
 
 ### iOS-Specific Properties
 ```javascript
 {
-  "route": "WIRED_HEADSET",
-  "changeType": "ROUTE_CHANGED",
+  "route": "wired_headset",
+  "changeType": "routeChanged",
   "reason": 2,                           // Numeric reason code
   "reasonString": "NewDeviceAvailable",  // Human-readable reason
   "previousOutputType": "Receiver",      // iOS-specific previous route
-  "currentOutputType": "HeadphonesAndMicrophone", // iOS-specific current route
-  "message": "audioRouteChange event called successfully"
+  "currentOutputType": "HeadphonesAndMicrophone" // iOS-specific current route
 }
-```
-
-## Utility Functions
-
-### Cross-Platform Event Parsing
-```javascript
-const parsedData = CordovaCall.parseAudioRouteChangeEvent(event.data);
-console.log('Platform:', parsedData.platform); // 'android' or 'ios'
-console.log('Output type:', parsedData.outputType);
-```
-
-### Route Conversion
-```javascript
-// Convert standardized route to iOS output type
-const iosOutputType = CordovaCall.androidRouteToOutputType(CordovaCall.AudioRoute.SPEAKER);
-// Returns: "Speaker"
 ```
 
 ## Platform Implementation Details
@@ -152,10 +161,10 @@ CordovaCall.AudioRouteChangeReason = {
 ### iOS Output Types (Platform-Specific)
 ```javascript
 CordovaCall.AudioOutputType = {
-  RECEIVER: 'Receiver',                    // Maps to EARPIECE
-  SPEAKER: 'Speaker',                      // Maps to SPEAKER
-  HEADPHONES: 'HeadphonesAndMicrophone',   // Maps to WIRED_HEADSET
-  BLUETOOTH_HFP: 'BluetoothHFP',          // Maps to BLUETOOTH
+  RECEIVER: 'Receiver',                    // Maps to earpiece
+  SPEAKER: 'Speaker',                      // Maps to speaker
+  HEADPHONES: 'HeadphonesAndMicrophone',   // Maps to wired_headset
+  BLUETOOTH_HFP: 'BluetoothHFP',          // Maps to bluetooth
   BLUETOOTH_A2DP: 'BluetoothA2DPOutput',
   AIRPLAY: 'AirPlay',
   USB_AUDIO: 'USBAudio',
@@ -168,7 +177,7 @@ CordovaCall.AudioOutputType = {
 1. **Consistent API**: Same constants and event format across platforms
 2. **Comprehensive Detection**: Captures all route changes regardless of cause  
 3. **Easy Integration**: Simple event listener with standardized data
-4. **Cross-Platform Utilities**: Helper functions for platform differences
+4. **Reactive & Proactive**: Both event-based monitoring and current state queries
 5. **Developer Friendly**: JavaScript enum definitions for easy usage
 
 ## Testing
