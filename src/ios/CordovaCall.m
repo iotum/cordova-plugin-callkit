@@ -8,16 +8,6 @@
 
 @synthesize VoIPPushCallbackId, VoIPPushClassName, VoIPPushMethodName;
 
-// Audio Route Change Reason Constants
-NSInteger const AudioRouteChangeReasonUnknown = 1;
-NSInteger const AudioRouteChangeReasonNewDeviceAvailable = 2;
-NSInteger const AudioRouteChangeReasonOldDeviceUnavailable = 3;
-NSInteger const AudioRouteChangeReasonCategoryChange = 4;
-NSInteger const AudioRouteChangeReasonOverride = 5;
-NSInteger const AudioRouteChangeReasonWakeFromSleep = 6;
-NSInteger const AudioRouteChangeReasonNoSuitableRoute = 7;
-NSInteger const AudioRouteChangeReasonRouteConfigChange = 8;
-
 BOOL hasVideo = NO;
 NSString* appName;
 NSString* ringtone;
@@ -549,7 +539,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         int reason = [reasonValue intValue];
 
         // Filter out unimportant route changes
-        if (reason == AudioRouteChangeReasonUnknown || reason == AudioRouteChangeReasonWakeFromSleep || reason == AudioRouteChangeReasonRouteConfigChange) {
+        if (reason == AVAudioSessionRouteChangeReasonUnknown || reason == AVAudioSessionRouteChangeReasonWakeFromSleep || reason == AVAudioSessionRouteChangeReasonRouteConfigurationChange) {
             return;
         }
 
@@ -630,14 +620,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (NSString*)getRouteChangeReasonString:(int)reason
 {
     switch(reason) {
-        case AudioRouteChangeReasonUnknown: return @"Unknown";
-        case AudioRouteChangeReasonNewDeviceAvailable: return @"NewDeviceAvailable";
-        case AudioRouteChangeReasonOldDeviceUnavailable: return @"OldDeviceUnavailable"; 
-        case AudioRouteChangeReasonCategoryChange: return @"CategoryChange";
-        case AudioRouteChangeReasonOverride: return @"Override"; // This fires when overrideOutputAudioPort is called
-        case AudioRouteChangeReasonWakeFromSleep: return @"WakeFromSleep";
-        case AudioRouteChangeReasonNoSuitableRoute: return @"NoSuitableRouteForCategory";
-        case AudioRouteChangeReasonRouteConfigChange: return @"RouteConfigurationChange";
+        case AVAudioSessionRouteChangeReasonUnknown: return @"Unknown";
+        case AVAudioSessionRouteChangeReasonNewDeviceAvailable: return @"NewDeviceAvailable";
+        case AVAudioSessionRouteChangeReasonOldDeviceUnavailable: return @"OldDeviceUnavailable"; 
+        case AVAudioSessionRouteChangeReasonCategoryChange: return @"CategoryChange";
+        case AVAudioSessionRouteChangeReasonOverride: return @"Override"; // This fires when overrideOutputAudioPort is called
+        case AVAudioSessionRouteChangeReasonWakeFromSleep: return @"WakeFromSleep";
+        case AVAudioSessionRouteChangeReasonNoSuitableRouteForCategory: return @"NoSuitableRouteForCategory";
+        case AVAudioSessionRouteChangeReasonRouteConfigurationChange: return @"RouteConfigurationChange";
         default: return [NSString stringWithFormat:@"Reason%d", reason];
     }
 }

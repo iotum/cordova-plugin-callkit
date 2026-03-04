@@ -16,42 +16,6 @@ exports.AudioRouteChangeType = {
   ROUTE_CHANGED: 'routeChanged'              // iOS: General route change
 };
 
-// iOS Audio Route Change Reasons (iOS specific)
-exports.AudioRouteChangeReason = {
-  UNKNOWN: 1,
-  NEW_DEVICE_AVAILABLE: 2,
-  OLD_DEVICE_UNAVAILABLE: 3,
-  CATEGORY_CHANGE: 4,
-  OVERRIDE: 5, // Programmatic change via speakerOn/speakerOff
-  WAKE_FROM_SLEEP: 6,
-  NO_SUITABLE_ROUTE: 7,
-  ROUTE_CONFIG_CHANGE: 8
-};
-
-// iOS Audio Route Change Reason Strings (iOS specific)
-exports.AudioRouteChangeReasonString = {
-  1: 'Unknown',
-  2: 'NewDeviceAvailable',
-  3: 'OldDeviceUnavailable', 
-  4: 'CategoryChange',
-  5: 'Override',
-  6: 'WakeFromSleep',
-  7: 'NoSuitableRouteForCategory',
-  8: 'RouteConfigurationChange'
-};
-
-// Common Audio Output Types (for iOS compatibility)
-exports.AudioOutputType = {
-  RECEIVER: 'Receiver', // Earpiece
-  SPEAKER: 'Speaker',
-  HEADPHONES: 'HeadphonesAndMicrophone',
-  BLUETOOTH_HFP: 'BluetoothHFP',
-  BLUETOOTH_A2DP: 'BluetoothA2DPOutput',
-  AIRPLAY: 'AirPlay',
-  USB_AUDIO: 'USBAudio',
-  UNKNOWN: 'Unknown'
-};
-
 exports.setAppName = function (appName, success, error) {
   exec(success, error, "CordovaCall", "setAppName", [appName]);
 };

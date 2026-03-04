@@ -199,6 +199,16 @@ public class MyConnectionService extends ConnectionService {
         }
     }
 
+    private void handleCallAudioStateChanged(CallAudioState state) {
+        Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
+
+        // Use the centralized method from CordovaCall to emit route change event
+        CordovaCall instance = CordovaCall.getInstance();
+        if (instance != null) {
+            instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
+        }
+    }
+
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
@@ -329,13 +339,7 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onCallAudioStateChanged(CallAudioState state) {
                 super.onCallAudioStateChanged(state);
-                Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
-
-                // Use the centralized method from CordovaCall to emit route change event
-                CordovaCall instance = CordovaCall.getInstance();
-                if (instance != null) {
-                    instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.ROUTE_CHANGE);
-                }
+                handleCallAudioStateChanged(state);
             }
         };
 
@@ -393,13 +397,7 @@ public class MyConnectionService extends ConnectionService {
             @Override
             public void onCallAudioStateChanged(CallAudioState state) {
                 super.onCallAudioStateChanged(state);
-                Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
-
-                // Use the centralized method from CordovaCall to emit route change event
-                CordovaCall instance = CordovaCall.getInstance();
-                if (instance != null) {
-                    instance.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
-                }
+                handleCallAudioStateChanged(state);
             }
 
             @Override
