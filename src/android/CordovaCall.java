@@ -38,7 +38,23 @@ public class CordovaCall extends CordovaPlugin {
     private static String TAG = "CordovaCall";
     public static final int REAL_PHONE_CALL = 1;
 
+    // Audio Route Constants (standardized across platforms)
+    public static class AudioRoute {
+        public static final String EARPIECE = "earpiece";
+        public static final String BLUETOOTH = "bluetooth";
+        public static final String SPEAKER = "speaker";
+        public static final String WIRED_HEADSET = "wired_headset";
+        public static final String UNKNOWN = "unknown";
+    }
+
+    // Audio Route Change Types (standardized across platforms)
+    public static class AudioRouteChangeType {
+        public static final String DEVICE_CHANGED = "deviceChanged";
+        public static final String PROGRAMMATIC_CHANGE = "programmaticChange";
+    }
+
     private TelecomManager tm;
+    private AudioManager audioManager;
 
     private CallbackContext callbackContext;
     private String appName;
@@ -55,6 +71,7 @@ public class CordovaCall extends CordovaPlugin {
         callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
+        callbackContextMap.put("audioRouteChange", new ArrayList<CallbackContext>());
     }
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
@@ -133,7 +150,12 @@ public class CordovaCall extends CordovaPlugin {
             }
         });
 
+        // Initialize AudioManager for audio route change monitoring
+        this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+
         instance = this;
+
+        AudioRouteMonitor.setInstance(new AudioRouteMonitor(cordova, this.audioManager));
     }
 
     public void setMainActivityInForeground(boolean isInForeground) {
@@ -210,6 +232,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("Your call is already connected");
             } else {
                 conn.setActive();
+                AudioRouteMonitor.onCallConnected(); // Start monitoring if this is the first call
                 Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 this.cordova.getActivity().getApplicationContext().startActivity(intent);
@@ -222,6 +245,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("No call exists for you to end");
             } else {
                 MyConnectionService.endActiveCall();
+                AudioRouteMonitor.onCallEnded(); // Stop monitoring if this is the last call
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {
@@ -277,6 +301,9 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("speakerOff")) {
             this.speakerOff();
+            return true;
+        } else if (action.equals("getAudioRoute")) {
+            this.getAudioRoute(callbackContext);
             return true;
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
@@ -397,13 +424,11 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void mute() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setMicrophoneMute(true);
+        this.audioManager.setMicrophoneMute(true);
     }
 
     private void unmute() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setMicrophoneMute(false);
+        this.audioManager.setMicrophoneMute(false);
     }
 
     private void speakerOn() {
@@ -431,23 +456,26 @@ public class CordovaCall extends CordovaPlugin {
         }
     }
 
-    private void setConnectionAudioRoute(Connection conn, int route) {
-        if (conn != null && route >= 0) {
-            conn.setAudioRoute(route);
-            Log.i(TAG, "setConnectionAudioRoute: " + getRouteName(route));
-            this.callbackContext.success("Connection audio route changed to: " + route);
-        } else {
-            this.callbackContext.error("No active connection");
+    private void getAudioRoute(CallbackContext callbackContext) {
+        try {
+            AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+            String route = monitoring != null ? monitoring.getCurrentAudioRoute() : AudioRoute.UNKNOWN;
+            callbackContext.success(route);
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting current audio route: " + e.getMessage());
+            callbackContext.error("Failed to get current audio route");
         }
     }
 
-    private String getRouteName(int route) {
-        switch (route) {
-            case CallAudioState.ROUTE_EARPIECE: return "Earpiece";
-            case CallAudioState.ROUTE_BLUETOOTH: return "Bluetooth";
-            case CallAudioState.ROUTE_SPEAKER: return "Speaker";
-            case CallAudioState.ROUTE_WIRED_HEADSET: return "Wired Headset";
-            default: return "Unknown";
+    private void setConnectionAudioRoute(Connection conn, int route) {
+        if (conn != null && route >= 0) {
+            conn.setAudioRoute(route);
+            AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+            String routeName = monitoring != null ? monitoring.getRouteNameFromState(route) : String.valueOf(route);
+            Log.i(TAG, "setConnectionAudioRoute: " + routeName);
+            this.callbackContext.success("Connection audio route changed to: " + routeName);
+        } else {
+            this.callbackContext.error("No active connection");
         }
     }
 
@@ -482,5 +510,25 @@ public class CordovaCall extends CordovaPlugin {
                 this.callNumber();
                 break;
         }
+    }
+
+    @Override
+    public void onReset() {
+        // Ensure audio route monitoring is stopped when the WebView is reset
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.stopMonitoring();
+        }
+        super.onReset();
+    }
+
+    @Override
+    public void onDestroy() {
+        // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.stopMonitoring();
+        }
+        super.onDestroy();
     }
 }

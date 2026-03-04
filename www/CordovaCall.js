@@ -1,5 +1,21 @@
 var exec = require('cordova/exec');
 
+// Standardized Audio Route Constants (used by both platforms)
+exports.AudioRoute = {
+  EARPIECE: 'earpiece',
+  BLUETOOTH: 'bluetooth', 
+  SPEAKER: 'speaker',
+  WIRED_HEADSET: 'wired_headset',
+  UNKNOWN: 'unknown'
+};
+
+// Audio Route Change Types
+exports.AudioRouteChangeType = {
+  DEVICE_CHANGED: 'deviceChanged',           // Android: Physical device connect/disconnect
+  PROGRAMMATIC_CHANGE: 'programmaticChange', // Android: Via setAudioRoute() method
+  ROUTE_CHANGED: 'routeChanged'              // iOS: General route change
+};
+
 exports.setAppName = function (appName, success, error) {
   exec(success, error, "CordovaCall", "setAppName", [appName]);
 };
@@ -80,6 +96,10 @@ exports.speakerOn = function (success, error) {
 
 exports.speakerOff = function (success, error) {
   exec(success, error, "CordovaCall", "speakerOff", []);
+};
+
+exports.getAudioRoute = function (success, error) {
+  exec(success, error, "CordovaCall", "getAudioRoute", []);
 };
 
 exports.callNumber = function (to, success, error) {

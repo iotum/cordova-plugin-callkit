@@ -7,9 +7,7 @@ import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.app.Notification;
 import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
@@ -18,6 +16,7 @@ import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.telecom.CallAudioState;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
@@ -33,21 +32,20 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
-    private static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are call_uuid strings
+    static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are call_uuid strings
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
 
     private CallActionReceiver callActionReceiver;
 
     // TODO: store the outgoing connections in connectionMap() to do that we will need a call UUID which we could pass into the app through sendCall
     // we can then get rid of this variable, and just always use connectionMap() + connection UUIDs to access both incoming and outgoing connections.
-    private static Connection activeOutgoingConnection;
+    static Connection activeOutgoingConnection;
 
     @Override
     public void onCreate() {
@@ -140,7 +138,7 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    private static String activeConnectionUUID;
+    static String activeConnectionUUID;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
@@ -198,6 +196,16 @@ public class MyConnectionService extends ConnectionService {
         }
     }
 
+    void handleCallAudioStateChanged(CallAudioState state) {
+        Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
+
+        // Use the centralized method from AudioRouteMonitor to emit route change event
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.emitCurrentAudioRoute(CordovaCall.AudioRouteChangeType.PROGRAMMATIC_CHANGE);
+        }
+    }
+
     @Override
     public Connection onCreateIncomingConnection(final PhoneAccountHandle connectionManagerPhoneAccount, final ConnectionRequest request) {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
@@ -222,109 +230,7 @@ public class MyConnectionService extends ConnectionService {
 
         connectionAddedMap.remove(callUUID);
 
-        final Connection connection = new Connection() {
-            IncomingCallNotification incomingCallNotification;
-            Runnable mainActivityChangeListener;
-
-            @Override
-            public void onShowIncomingCallUi() { // Only for self managed connections
-                Log.d(TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
-                this.setRinging();
-
-                this.incomingCallNotification = new IncomingCallNotification(payloadString, getApplicationContext());
-                Notification notification = this.incomingCallNotification.build();
-
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.notify(this.incomingCallNotification.getNotificationID(), notification);
-            }
-
-            public void cancelIncomingCallNotification() {
-                if (this.incomingCallNotification == null) {
-                    return;
-                }
-                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(this.incomingCallNotification.getNotificationID());
-                this.incomingCallNotification = null;
-            }
-
-            @Override
-            public void onAnswer() {
-                Log.d(TAG, "onAnswer()");
-
-                cancelIncomingCallNotification();
-
-                this.setActive();
-                activeConnectionUUID = callUUID;
-
-                showWebApp("answerCall", payloadString);
-
-                Log.d(TAG, "Starting CallAudioService...");
-                Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-                intent.putExtra("peerName", callerName);
-                startForegroundService(intent);
-
-                Log.d(TAG, "Emitting CordovaCall answer event...");
-                CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
-            }
-
-            @Override
-            public void onReject() {
-                Log.d(TAG, "onReject, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
-
-                showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller not it was declined)
-
-                CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
-            }
-
-            @Override
-            public void onAbort() {
-                Log.d(TAG, "onAbort, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-            }
-
-            @Override
-            public void onDisconnect() {
-                Log.d(TAG, "onDisconnect, call_uuid: " + callUUID);
-                this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
-                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
-            }
-
-            @Override
-            public void onStateChanged(int state) {
-                super.onStateChanged(state);
-                Log.d(TAG, "connection onStateChanged: " + state);
-
-                switch (state) {
-                    case Connection.STATE_ACTIVE:
-                        break;
-                    case Connection.STATE_DISCONNECTED:
-                        connectionMap.remove(callUUID);
-                        if (activeConnectionUUID != null && activeConnectionUUID.equals(callUUID)) {
-                            activeConnectionUUID = null;
-                        }
-                        if (this.mainActivityChangeListener != null) {
-                            CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
-                        }
-                        this.destroy();
-
-                        cancelIncomingCallNotification();
-
-                        Log.d(TAG, "Stopping CallAudioService...");
-                        Context context = getApplicationContext();
-                        Intent serviceIntent = new Intent(context, CallAudioService.class);
-                        context.stopService(serviceIntent);
-                        break;
-                }
-
-                Log.d(TAG, "broadcasting connection_state_changed call_uuid: " + callUUID + " state: " + state);
-                Intent intent = new Intent("connection_state_changed");
-                intent.putExtra("call_uuid", callUUID);
-                intent.putExtra("state", state);
-                Context context = getApplicationContext();
-                LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
-            }
-        };
+        final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName);
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
 
@@ -353,46 +259,7 @@ public class MyConnectionService extends ConnectionService {
 
     @Override
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
-        final Connection connection = new Connection() {
-            @Override
-            public void onAnswer() {
-                super.onAnswer();
-            }
-
-            @Override
-            public void onReject() {
-                super.onReject();
-            }
-
-            @Override
-            public void onAbort() {
-                super.onAbort();
-                this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
-            }
-
-            @Override
-            public void onDisconnect() {
-                DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
-                this.setDisconnected(cause);
-                CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
-            }
-
-            @Override
-            public void onStateChanged(int state) {
-                if (state == Connection.STATE_DISCONNECTED) {
-                    // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
-                    // Ensure the connection is destroyed, etc.
-                    this.destroy();
-                    activeOutgoingConnection = null;
-                    activeConnectionUUID = null;
-
-                    Log.d(TAG, "Stopping CallAudioService foreground service...");
-                    Context context = getApplicationContext();
-                    Intent serviceIntent = new Intent(context, CallAudioService.class);
-                    context.stopService(serviceIntent);
-                }
-            }
-        };
+        final OutgoingCallConnection connection = new OutgoingCallConnection(this);
         connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
