@@ -569,7 +569,12 @@ public class CordovaCall extends CordovaPlugin {
                 filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
             }
 
-            cordova.getActivity().registerReceiver(audioRouteReceiver, filter);
+            // Use explicit receiver export flag for API 33+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                cordova.getActivity().registerReceiver(audioRouteReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                cordova.getActivity().registerReceiver(audioRouteReceiver, filter);
+            }
         }
     }
 
@@ -617,7 +622,7 @@ public class CordovaCall extends CordovaPlugin {
             }
 
             JSONObject jsonData = new JSONObject(routeData);
-            PluginResult result = new PluginResult(PluginResult.Status.OK, jsonData.toString());
+            PluginResult result = new PluginResult(PluginResult.Status.OK, jsonData);
 
             CordovaCall.emitEvent("audioRouteChange", result);
         } catch (Exception e) {
