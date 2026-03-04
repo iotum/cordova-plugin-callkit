@@ -28,12 +28,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
+import android.media.AudioDeviceInfo;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
 import org.json.JSONObject;
 import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Toast;
+import android.hardware.usb.UsbManager;
 
 public class CordovaCall extends CordovaPlugin {
     private static String READ_PHONE_NUMBERS_REQUIRED = "read_phone_numbers_permission_required";
@@ -483,8 +485,8 @@ public class CordovaCall extends CordovaPlugin {
 
     private String getCurrentAudioRouteFromAudioManager() {
         try {
-            // Check Bluetooth SCO first (highest priority)
-            if (audioManager.isBluetoothScoOn() || audioManager.isBluetoothA2dpOn()) {
+            // Check Bluetooth SCO first (highest priority). Do not use A2DP, since it may be media-only.
+            if (audioManager.isBluetoothScoOn()) {
                 return AudioRoute.BLUETOOTH;
             }
 
@@ -493,9 +495,16 @@ public class CordovaCall extends CordovaPlugin {
                 return AudioRoute.SPEAKER;
             }
 
-            // Check wired headset
-            if (audioManager.isWiredHeadsetOn()) {
-                return AudioRoute.WIRED_HEADSET;
+            // Check wired headset using modern API for API 23+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (hasWiredHeadsetConnected()) {
+                    return AudioRoute.WIRED_HEADSET;
+                }
+            } else {
+                // Fallback to deprecated method for older Android versions
+                if (audioManager.isWiredHeadsetOn()) {
+                    return AudioRoute.WIRED_HEADSET;
+                }
             }
 
             // Default to earpiece for voice calls
@@ -505,6 +514,30 @@ public class CordovaCall extends CordovaPlugin {
             Log.e(TAG, "Error getting audio route from AudioManager: " + e.getMessage());
             return AudioRoute.UNKNOWN;
         }
+    }
+
+    private boolean hasWiredHeadsetConnected() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                for (AudioDeviceInfo device : devices) {
+                    int type = device.getType();
+                    // Check for various wired/USB headset types
+                    if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                        type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                        type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                        type == AudioDeviceInfo.TYPE_USB_DEVICE) {
+                        Log.d(TAG, "Detected wired/USB headset: " + device.getProductName());
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error checking for wired headset: " + e.getMessage());
+                // Fall back to deprecated method if modern API fails
+                return audioManager.isWiredHeadsetOn();
+            }
+        }
+        return false;
     }
 
     private void setConnectionAudioRoute(Connection conn, int route) {
@@ -578,7 +611,19 @@ public class CordovaCall extends CordovaPlugin {
             audioRouteReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
-                    Log.d(TAG, "Audio route broadcast received: " + intent.getAction());
+                    String action = intent.getAction();
+                    Log.d(TAG, "Audio route broadcast received: " + action);
+                    
+                    // Log additional details for headset plug events
+                    if (AudioManager.ACTION_HEADSET_PLUG.equals(action)) {
+                        int state = intent.getIntExtra("state", -1);
+                        String name = intent.getStringExtra("name");
+                        Log.d(TAG, "Headset plug event - state: " + state + ", name: " + name);
+                    } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action) || 
+                               UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
+                        Log.d(TAG, "USB device event - may affect audio routing");
+                    }
+                    
                     emitCurrentAudioRoute(AudioRouteChangeType.DEVICE_CHANGED);
                 }
             };
@@ -588,6 +633,9 @@ public class CordovaCall extends CordovaPlugin {
             filter.addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+                // Add USB device actions for better USB headset detection
+                filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+                filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
             }
 
             // Use explicit receiver export flag for API 33+
