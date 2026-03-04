@@ -18,6 +18,7 @@ import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.telecom.CallAudioState;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
@@ -324,6 +325,28 @@ public class MyConnectionService extends ConnectionService {
                 Context context = getApplicationContext();
                 LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
             }
+
+            @Override
+            public void onCallAudioStateChanged(CallAudioState state) {
+                super.onCallAudioStateChanged(state);
+                Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
+                
+                // Use the centralized method from CordovaCall to emit route change event
+                CordovaCall instance = CordovaCall.getInstance();
+                if (instance != null) {
+                    instance.emitCurrentAudioRoute("programmaticChange");
+                }
+            }
+            
+            private String getRouteNameFromState(int route) {
+                switch (route) {
+                    case CallAudioState.ROUTE_EARPIECE: return "ROUTE_EARPIECE";
+                    case CallAudioState.ROUTE_BLUETOOTH: return "ROUTE_BLUETOOTH";
+                    case CallAudioState.ROUTE_SPEAKER: return "ROUTE_SPEAKER";
+                    case CallAudioState.ROUTE_WIRED_HEADSET: return "ROUTE_WIRED_HEADSET";
+                    default: return "ROUTE_UNKNOWN";
+                }
+            }
         };
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
@@ -375,6 +398,28 @@ public class MyConnectionService extends ConnectionService {
                 DisconnectCause cause = new DisconnectCause(DisconnectCause.LOCAL);
                 this.setDisconnected(cause);
                 CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
+            }
+
+            @Override
+            public void onCallAudioStateChanged(CallAudioState state) {
+                super.onCallAudioStateChanged(state);
+                Log.d(TAG, "onCallAudioStateChanged: route=" + state.getRoute() + ", supportedRoutes=" + state.getSupportedRouteMask());
+                
+                // Use the centralized method from CordovaCall to emit route change event
+                CordovaCall instance = CordovaCall.getInstance();
+                if (instance != null) {
+                    instance.emitCurrentAudioRoute("programmaticChange");
+                }
+            }
+            
+            private String getRouteNameFromState(int route) {
+                switch (route) {
+                    case CallAudioState.ROUTE_EARPIECE: return "ROUTE_EARPIECE";
+                    case CallAudioState.ROUTE_BLUETOOTH: return "ROUTE_BLUETOOTH";
+                    case CallAudioState.ROUTE_SPEAKER: return "ROUTE_SPEAKER";
+                    case CallAudioState.ROUTE_WIRED_HEADSET: return "ROUTE_WIRED_HEADSET";
+                    default: return "ROUTE_UNKNOWN";
+                }
             }
 
             @Override

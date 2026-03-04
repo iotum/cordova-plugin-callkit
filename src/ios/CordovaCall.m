@@ -8,6 +8,16 @@
 
 @synthesize VoIPPushCallbackId, VoIPPushClassName, VoIPPushMethodName;
 
+// Audio Route Change Reason Constants
+NSInteger const AudioRouteChangeReasonUnknown = 1;
+NSInteger const AudioRouteChangeReasonNewDeviceAvailable = 2;
+NSInteger const AudioRouteChangeReasonOldDeviceUnavailable = 3;
+NSInteger const AudioRouteChangeReasonCategoryChange = 4;
+NSInteger const AudioRouteChangeReasonOverride = 5;
+NSInteger const AudioRouteChangeReasonWakeFromSleep = 6;
+NSInteger const AudioRouteChangeReasonNoSuitableRoute = 7;
+NSInteger const AudioRouteChangeReasonRouteConfigChange = 8;
+
 BOOL hasVideo = NO;
 NSString* appName;
 NSString* ringtone;
@@ -62,6 +72,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [callbackIds setObject:[NSMutableArray array] forKey:@"speakerOn"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"speakerOff"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"DTMF"];
+    [callbackIds setObject:[NSMutableArray array] forKey:@"audioRouteChange"];
     
     // Add call response (answer or reject) to pending if event listeners are not added at the time of responding
     pendingCallResponses = [NSMutableArray new];
@@ -438,6 +449,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+    [self logMessage:@"Programmatically turning speaker on"];
     BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
     if(success) {
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is on"];
@@ -451,6 +463,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+    [self logMessage:@"Programmatically turning speaker off"];
     BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:nil];
     if(success) {
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is off"];
@@ -511,18 +524,39 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     if(monitorAudioRouteChange) {
         NSNumber* reasonValue = notification.userInfo[@"AVAudioSessionRouteChangeReasonKey"];
+        int reason = [reasonValue intValue];
+        
+        // Filter out unimportant route changes
+        if (reason == AudioRouteChangeReasonUnknown || reason == AudioRouteChangeReasonWakeFromSleep || reason == AudioRouteChangeReasonRouteConfigChange) {
+            return;
+        }
+        
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[@"AVAudioSessionRouteChangePreviousRouteKey"];
+        AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
+        
+        // Get current and previous output types
+        NSString* currentOutputType = @"Unknown";
+        NSString* previousOutputType = @"Unknown";
+        NSString* reasonString = [self getRouteChangeReasonString:reason];
+        
+        if([currentRoute.outputs count] > 0) {
+            currentOutputType = [currentRoute.outputs[0] portType];
+        }
+        
         NSArray* outputs = [previousRouteKey outputs];
         if([outputs count] > 0) {
             AVAudioSessionPortDescription *output = outputs[0];
-            if(![output.portType isEqual: @"Speaker"] && [reasonValue isEqual:@4]) {
+            previousOutputType = output.portType;
+            
+            // Legacy speakerOn/speakerOff events for backward compatibility
+            if(![output.portType isEqual: @"Speaker"] && [currentOutputType isEqual: @"Speaker"]) {
                 for (id callbackId in callbackIds[@"speakerOn"]) {
                     CDVPluginResult* pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"speakerOn event called successfully"];
                     [pluginResult setKeepCallbackAsBool:YES];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
                 }
-            } else if([output.portType isEqual: @"Speaker"] && [reasonValue isEqual:@3]) {
+            } else if([output.portType isEqual: @"Speaker"] && ![currentOutputType isEqual: @"Speaker"]) {
                 for (id callbackId in callbackIds[@"speakerOff"]) {
                     CDVPluginResult* pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"speakerOff event called successfully"];
@@ -531,6 +565,56 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 }
             }
         }
+        
+        // Enhanced audioRouteChange event with comprehensive information
+        NSDictionary *routeChangeData = @{
+            @"reason": reasonValue,
+            @"reasonString": reasonString,
+            @"previousOutputType": previousOutputType,
+            @"currentOutputType": currentOutputType,
+            @"route": [self convertIOSOutputTypeToStandardRoute:currentOutputType],
+            @"changeType": @"ROUTE_CHANGED",
+            @"message": @"audioRouteChange event called successfully"
+        };
+        
+        [self logMessage:[NSString stringWithFormat:@"Audio route changed: %@ -> %@ (reason: %@)", previousOutputType, currentOutputType, reasonString]];
+        
+        for (id callbackId in callbackIds[@"audioRouteChange"]) {
+            CDVPluginResult* pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:routeChangeData];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        }
+    }
+}
+
+- (NSString*)convertIOSOutputTypeToStandardRoute:(NSString*)iosOutputType
+{
+    if ([iosOutputType isEqualToString:@"Receiver"]) {
+        return @"EARPIECE";
+    } else if ([iosOutputType isEqualToString:@"Speaker"]) {
+        return @"SPEAKER";
+    } else if ([iosOutputType containsString:@"Bluetooth"]) {
+        return @"BLUETOOTH";
+    } else if ([iosOutputType containsString:@"Headphones"] || [iosOutputType isEqualToString:@"HeadphonesAndMicrophone"]) {
+        return @"WIRED_HEADSET";
+    } else {
+        return @"UNKNOWN";
+    }
+}
+
+- (NSString*)getRouteChangeReasonString:(int)reason
+{
+    switch(reason) {
+        case AudioRouteChangeReasonUnknown: return @"Unknown";
+        case AudioRouteChangeReasonNewDeviceAvailable: return @"NewDeviceAvailable";
+        case AudioRouteChangeReasonOldDeviceUnavailable: return @"OldDeviceUnavailable"; 
+        case AudioRouteChangeReasonCategoryChange: return @"CategoryChange";
+        case AudioRouteChangeReasonOverride: return @"Override"; // This fires when overrideOutputAudioPort is called
+        case AudioRouteChangeReasonWakeFromSleep: return @"WakeFromSleep";
+        case AudioRouteChangeReasonNoSuitableRoute: return @"NoSuitableRouteForCategory";
+        case AudioRouteChangeReasonRouteConfigChange: return @"RouteConfigurationChange";
+        default: return [NSString stringWithFormat:@"Reason%d", reason];
     }
 }
 

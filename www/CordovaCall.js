@@ -1,5 +1,57 @@
 var exec = require('cordova/exec');
 
+// Standardized Audio Route Constants (used by both platforms)
+exports.AudioRoute = {
+  EARPIECE: 'EARPIECE',
+  BLUETOOTH: 'BLUETOOTH', 
+  SPEAKER: 'SPEAKER',
+  WIRED_HEADSET: 'WIRED_HEADSET',
+  UNKNOWN: 'UNKNOWN'
+};
+
+// Audio Route Change Types
+exports.AudioRouteChangeType = {
+  DEVICE_CHANGED: 'DEVICE_CHANGED',
+  PROGRAMMATIC_CHANGE: 'PROGRAMMATIC_CHANGE',
+  ROUTE_CHANGED: 'ROUTE_CHANGED'
+};
+
+// iOS Audio Route Change Reasons (iOS specific)
+exports.AudioRouteChangeReason = {
+  UNKNOWN: 1,
+  NEW_DEVICE_AVAILABLE: 2,
+  OLD_DEVICE_UNAVAILABLE: 3,
+  CATEGORY_CHANGE: 4,
+  OVERRIDE: 5, // Programmatic change via speakerOn/speakerOff
+  WAKE_FROM_SLEEP: 6,
+  NO_SUITABLE_ROUTE: 7,
+  ROUTE_CONFIG_CHANGE: 8
+};
+
+// iOS Audio Route Change Reason Strings (iOS specific)
+exports.AudioRouteChangeReasonString = {
+  1: 'Unknown',
+  2: 'NewDeviceAvailable',
+  3: 'OldDeviceUnavailable', 
+  4: 'CategoryChange',
+  5: 'Override',
+  6: 'WakeFromSleep',
+  7: 'NoSuitableRouteForCategory',
+  8: 'RouteConfigurationChange'
+};
+
+// Common Audio Output Types (for iOS compatibility)
+exports.AudioOutputType = {
+  RECEIVER: 'Receiver', // Earpiece
+  SPEAKER: 'Speaker',
+  HEADPHONES: 'HeadphonesAndMicrophone',
+  BLUETOOTH_HFP: 'BluetoothHFP',
+  BLUETOOTH_A2DP: 'BluetoothA2DPOutput',
+  AIRPLAY: 'AirPlay',
+  USB_AUDIO: 'USBAudio',
+  UNKNOWN: 'Unknown'
+};
+
 exports.setAppName = function (appName, success, error) {
   exec(success, error, "CordovaCall", "setAppName", [appName]);
 };
@@ -157,4 +209,64 @@ exports.wsSend = function (wsId, message) {
 
 exports.wsClose = function (wsId, code, reason) {
   exec(null, null, "CordovaCall", 'wsClose', [wsId, code, reason]);
+};
+
+// Utility Functions
+exports.parseAudioRouteChangeEvent = function(eventData) {
+  try {
+    // Handle both string and object data
+    var data = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
+    
+    var result = {
+      changeType: data.changeType,
+      message: data.message
+    };
+    
+    // Android format
+    if (data.route) {
+      result.platform = 'android';
+      result.route = data.route;
+      result.supportedRoutes = data.supportedRoutes;
+      result.isMuted = data.isMuted;
+      
+      // Convert Android route to common format
+      result.outputType = exports.androidRouteToOutputType(data.route);
+    }
+    
+    // iOS format  
+    if (data.reason !== undefined) {
+      result.platform = 'ios';
+      result.reason = data.reason;
+      result.reasonString = data.reasonString;
+      result.previousOutputType = data.previousOutputType;
+      result.currentOutputType = data.currentOutputType;
+      
+      // Add convenience properties
+      result.outputType = data.currentOutputType;
+      result.isPhysicalChange = (data.reason === exports.AudioRouteChangeReason.NEW_DEVICE_AVAILABLE || 
+                                data.reason === exports.AudioRouteChangeReason.OLD_DEVICE_UNAVAILABLE);
+      result.isProgrammaticChange = (data.reason === exports.AudioRouteChangeReason.OVERRIDE);
+    }
+    
+    return result;
+  } catch (e) {
+    console.error('Error parsing audio route change event:', e);
+    return eventData;
+  }
+};
+
+// Convert Android route constants to iOS-style output types
+exports.androidRouteToOutputType = function(androidRoute) {
+  switch(androidRoute) {
+    case exports.AudioRoute.EARPIECE:
+      return exports.AudioOutputType.RECEIVER;
+    case exports.AudioRoute.SPEAKER:
+      return exports.AudioOutputType.SPEAKER;
+    case exports.AudioRoute.BLUETOOTH:
+      return exports.AudioOutputType.BLUETOOTH_HFP;
+    case exports.AudioRoute.WIRED_HEADSET:
+      return exports.AudioOutputType.HEADPHONES;
+    default:
+      return exports.AudioOutputType.UNKNOWN;
+  }
 };
