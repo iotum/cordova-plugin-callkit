@@ -545,7 +545,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)handleAudioRouteChange:(NSNotification *) notification
 {
     if(monitorAudioRouteChange) {
-        NSNumber* reasonValue = notification.userInfo[@"AVAudioSessionRouteChangeReasonKey"];
+        NSNumber* reasonValue = notification.userInfo[AVAudioSessionRouteChangeReasonKey];
         int reason = [reasonValue intValue];
 
         // Filter out unimportant route changes
@@ -553,7 +553,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             return;
         }
 
-        AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[@"AVAudioSessionRouteChangePreviousRouteKey"];
+        AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[AVAudioSessionRouteChangePreviousRouteKey];
         AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
 
         // Get current and previous output types
@@ -571,14 +571,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             previousOutputType = output.portType;
 
             // Legacy speakerOn/speakerOff events for backward compatibility
-            if(![output.portType isEqual: @"Speaker"] && [currentOutputType isEqual: @"Speaker"]) {
+            if(![output.portType isEqual:AVAudioSessionPortBuiltInSpeaker] && [currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
                 for (id callbackId in callbackIds[@"speakerOn"]) {
                     CDVPluginResult* pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"speakerOn event called successfully"];
                     [pluginResult setKeepCallbackAsBool:YES];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
                 }
-            } else if([output.portType isEqual: @"Speaker"] && ![currentOutputType isEqual: @"Speaker"]) {
+            } else if([output.portType isEqual:AVAudioSessionPortBuiltInSpeaker] && ![currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
                 for (id callbackId in callbackIds[@"speakerOff"]) {
                     CDVPluginResult* pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"speakerOff event called successfully"];
@@ -611,13 +611,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (NSString*)convertIOSOutputTypeToStandardRoute:(NSString*)iosOutputType
 {
-    if ([iosOutputType isEqualToString:@"Receiver"]) {
+    if ([iosOutputType isEqualToString:AVAudioSessionPortBuiltInReceiver]) {
         return @"earpiece";
-    } else if ([iosOutputType isEqualToString:@"Speaker"]) {
+    } else if ([iosOutputType isEqualToString:AVAudioSessionPortBuiltInSpeaker]) {
         return @"speaker";
-    } else if ([iosOutputType containsString:@"Bluetooth"]) {
+    } else if ([iosOutputType isEqualToString:AVAudioSessionPortBluetoothHFP] || 
+               [iosOutputType isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
+               [iosOutputType isEqualToString:AVAudioSessionPortBluetoothLE]) {
         return @"bluetooth";
-    } else if ([iosOutputType containsString:@"Headphones"] || [iosOutputType isEqualToString:@"HeadphonesAndMicrophone"]) {
+    } else if ([iosOutputType isEqualToString:AVAudioSessionPortHeadphones] || 
+               [iosOutputType isEqualToString:AVAudioSessionPortHeadsetMic]) {
         return @"wired_headset";
     } else {
         return @"unknown";

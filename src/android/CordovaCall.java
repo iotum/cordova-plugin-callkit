@@ -510,20 +510,10 @@ public class CordovaCall extends CordovaPlugin {
     private void setConnectionAudioRoute(Connection conn, int route) {
         if (conn != null && route >= 0) {
             conn.setAudioRoute(route);
-            Log.i(TAG, "setConnectionAudioRoute: " + getRouteName(route));
+            Log.i(TAG, "setConnectionAudioRoute: " + getRouteNameFromState(route));
             this.callbackContext.success("Connection audio route changed to: " + route);
         } else {
             this.callbackContext.error("No active connection");
-        }
-    }
-
-    private String getRouteName(int route) {
-        switch (route) {
-            case CallAudioState.ROUTE_EARPIECE: return "Earpiece";
-            case CallAudioState.ROUTE_BLUETOOTH: return "Bluetooth";
-            case CallAudioState.ROUTE_SPEAKER: return "Speaker";
-            case CallAudioState.ROUTE_WIRED_HEADSET: return "Wired Headset";
-            default: return "Unknown";
         }
     }
 
