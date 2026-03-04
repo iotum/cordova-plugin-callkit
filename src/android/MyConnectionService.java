@@ -308,6 +308,8 @@ public class MyConnectionService extends ConnectionService {
 
                 switch (state) {
                     case Connection.STATE_ACTIVE:
+                        // Call connected, start audio monitoring
+                        CordovaCall.onCallConnected();
                         break;
                     case Connection.STATE_DISCONNECTED:
                         connectionMap.remove(callUUID);
@@ -318,6 +320,7 @@ public class MyConnectionService extends ConnectionService {
                             CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
                         }
                         this.destroy();
+                        CordovaCall.onCallEnded(); // Stop audio monitoring if needed
 
                         cancelIncomingCallNotification();
 
@@ -402,12 +405,16 @@ public class MyConnectionService extends ConnectionService {
 
             @Override
             public void onStateChanged(int state) {
-                if (state == Connection.STATE_DISCONNECTED) {
+                if (state == Connection.STATE_ACTIVE) {
+                    // Call connected, start audio monitoring
+                    CordovaCall.onCallConnected();
+                } else if (state == Connection.STATE_DISCONNECTED) {
                     // In all cases when connection transitions to STATE_DISCONNECTED (both onAbort() and onDisconnect())
                     // Ensure the connection is destroyed, etc.
                     this.destroy();
                     activeOutgoingConnection = null;
                     activeConnectionUUID = null;
+                    CordovaCall.onCallEnded(); // Stop audio monitoring if needed
 
                     Log.d(TAG, "Stopping CallAudioService foreground service...");
                     Context context = getApplicationContext();

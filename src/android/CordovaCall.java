@@ -233,7 +233,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("Your call is already connected");
             } else {
                 conn.setActive();
-                startAudioRouteMonitoring();
+                onCallConnected(); // This will start monitoring if it's the first call
                 Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 this.cordova.getActivity().getApplicationContext().startActivity(intent);
@@ -246,7 +246,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("No call exists for you to end");
             } else {
                 MyConnectionService.endActiveCall();
-                stopAudioRouteMonitoring();
+                onCallEnded(); // This will stop monitoring if it's the last call
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {
@@ -552,12 +552,33 @@ public class CordovaCall extends CordovaPlugin {
 
     // Audio route change monitoring
     private BroadcastReceiver audioRouteReceiver;
+    private static int activeCallCount = 0; // Track number of active calls
+
+    private static void incrementActiveCallCount() {
+        activeCallCount++;
+        Log.d(TAG, "Active call count incremented to: " + activeCallCount);
+        if (activeCallCount == 1 && instance != null) {
+            instance.startAudioRouteMonitoring();
+        }
+    }
+
+    private static void decrementActiveCallCount() {
+        if (activeCallCount > 0) {
+            activeCallCount--;
+            Log.d(TAG, "Active call count decremented to: " + activeCallCount);
+            if (activeCallCount == 0 && instance != null) {
+                instance.stopAudioRouteMonitoring();
+            }
+        } else {
+            Log.w(TAG, "Attempted to decrement active call count when already 0");
 
     private void startAudioRouteMonitoring() {
         if (audioRouteReceiver == null) {
+            Log.d(TAG, "Starting audio route monitoring");
             audioRouteReceiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
+                    Log.d(TAG, "Audio route broadcast received: " + intent.getAction());
                     emitCurrentAudioRoute(AudioRouteChangeType.DEVICE_CHANGED);
                 }
             };
@@ -580,10 +601,12 @@ public class CordovaCall extends CordovaPlugin {
 
     private void stopAudioRouteMonitoring() {
         if (audioRouteReceiver != null) {
+            Log.d(TAG, "Stopping audio route monitoring");
             try {
                 cordova.getActivity().unregisterReceiver(audioRouteReceiver);
             } catch (IllegalArgumentException e) {
                 // Receiver not registered, ignore
+                Log.d(TAG, "Audio route receiver was not registered");
             }
             audioRouteReceiver = null;
         }
