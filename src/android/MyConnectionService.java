@@ -14,6 +14,7 @@ import android.telecom.CallAudioState;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
+import android.telecom.DisconnectCause;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
@@ -96,6 +97,17 @@ public class MyConnectionService extends ConnectionService {
 
                         Bundle callInfo = new Bundle();
                         callInfo.putString("payload", payloadString);
+
+                        // For robustness (avoiding violating MAX_RINGING_CALLS) + due to limitations of the current UI:
+                        // End any existing or lingering ringing connections before calling addNewIncomingCall() as it would fail:
+                        // (event: onCreateIncomingCallFailed reason: MAX_RINGING_CALLS)
+                        for (String key : connectionMap.keySet()) {
+                            Connection conn = connectionMap.get(key);
+                            if (conn.getState() == Connection.STATE_RINGING) {
+                                Log.d(TAG, "Disconnecting existing ringing connection for call_uuid: " + key + " before adding new call");
+                                conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL)); // Connection will later be destroyed + removed (see connection.onStateChanged).
+                            }
+                        }
 
                         Log.d(TAG, "Adding new incoming connection, callUUID: " + callUUID);
 
