@@ -242,7 +242,7 @@ public class MyConnectionService extends ConnectionService {
         if (parts.length >= 2) {
             return parts[0] + parts[1];
         } else {
-            Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
+            Log.e(TAG, "can not extract sessionId from callUUID: " + callUUID);
             return callUUID; // For robustness just use something
         }
     }
