@@ -237,9 +237,10 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static String getSessionIdFromCallUUID(String callUUID) {
-        int indexOfSeparator = callUUID.indexOf(";");
-        if (indexOfSeparator != -1) {
-            return callUUID.substring(0, indexOfSeparator);
+        String[] parts = callUUID.split(";");
+
+        if (parts.length >= 2) {
+            return parts[0] + parts[1];
         } else {
             Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
             return callUUID; // For robustness just use something
