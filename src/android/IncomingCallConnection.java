@@ -17,8 +17,8 @@ class IncomingCallConnection extends CallConnection {
     private final String payloadString;
     private IncomingCallNotification incomingCallNotification;
 
-    IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName) {
-        super(service, callerName);
+    IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName, String sessionId) {
+        super(service, callerName, sessionId);
         this.callUUID = callUUID;
         this.payloadString = payloadString;
     }
@@ -81,13 +81,7 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onStateChanged(int state) {
-        if (state == Connection.STATE_ACTIVE) {
-            MyConnectionService.activeConnectionUUID = callUUID;
-        } else  if (state == Connection.STATE_DISCONNECTED) {
-            MyConnectionService.connectionMap.remove(callUUID);
-            if (MyConnectionService.activeConnectionUUID != null && MyConnectionService.activeConnectionUUID.equals(callUUID)) {
-                MyConnectionService.activeConnectionUUID = null;
-            }
+        if (state == Connection.STATE_DISCONNECTED) {
             cancelIncomingCallNotification();
         }
 

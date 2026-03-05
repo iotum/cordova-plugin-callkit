@@ -14,7 +14,6 @@ import android.telecom.CallAudioState;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
-import android.telecom.DisconnectCause;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
@@ -30,10 +29,6 @@ public class MyConnectionService extends ConnectionService {
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
 
     private CallActionReceiver callActionReceiver;
-
-    // TODO: store the outgoing connections in connectionMap() to do that we will need a call UUID which we could pass into the app through sendCall
-    // we can then get rid of this variable, and just always use connectionMap() + connection UUIDs to access both incoming and outgoing connections.
-    static Connection activeOutgoingConnection;
 
     @Override
     public void onCreate() {
@@ -115,7 +110,7 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    static String activeConnectionUUID;
+    static String activeSessionId;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
@@ -125,7 +120,8 @@ public class MyConnectionService extends ConnectionService {
             throw new RuntimeException("Failed to parse payload JSON string: " + e);
         }
         String callUUID = payload.optString("call_uuid");
-        return connectionMap.get(callUUID);
+        String sessionId = getSessionIdFromCallUUID(callUUID);
+        return connectionMap.get(sessionId);
     }
 
     public void showWebApp(String userAction, String payload) {
@@ -153,28 +149,20 @@ public class MyConnectionService extends ConnectionService {
         this.startActivity(intent);
     }
 
+    // Returns the connection for the active session (or null if none)
     public static Connection getConnection() {
-        // Note: if your currently in an active connection,
-        // calling TelecomManager.addCall() would fail
-        // Thus you can really have either (but not both) an active outgoing or an active incoming connection
-        if (activeOutgoingConnection != null) {
-            return activeOutgoingConnection;
-        }
-        return activeConnectionUUID != null ? connectionMap.get(activeConnectionUUID) : null;
+        return activeSessionId != null ? connectionMap.get(activeSessionId) : null;
     }
 
     public static Connection getConnection(String sessionId) {
         return connectionMap.get(sessionId);
     }
 
-    public static void endActiveCall() {
-        if (activeConnectionUUID != null) {
-            Connection conn = connectionMap.get(activeConnectionUUID);
-            conn.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+    public static void onConnectionDisconnected(String sessionId) {
+        if (sessionId.equals(activeSessionId)) {
+            activeSessionId = null;
         }
-        if (activeOutgoingConnection != null) {
-            activeOutgoingConnection.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
-        }
+        connectionMap.remove(sessionId);
     }
 
     void handleCallAudioStateChanged(CallAudioState state) {
@@ -211,7 +199,8 @@ public class MyConnectionService extends ConnectionService {
 
         connectionAddedMap.remove(callUUID);
 
-        final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName);
+        String sessionId = getSessionIdFromCallUUID(callUUID);
+        final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
 
@@ -224,18 +213,21 @@ public class MyConnectionService extends ConnectionService {
         Log.d(TAG, "Created connection for callUUID: " + callUUID);
         connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
 
-        int indexOfSeparator = callUUID.indexOf(";");
-        if (indexOfSeparator != -1) {
-            Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
-            connectionMap.put(callUUID, connection);
-        } else {
-            String sessionId = callUUID.substring(0, indexOfSeparator);
-            connectionMap.put(sessionId, connection);
-        }
+        connectionMap.put(sessionId, connection);
 
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         return connection;
+    }
+
+    public static String getSessionIdFromCallUUID(String callUUID) {
+        int indexOfSeparator = callUUID.indexOf(";");
+        if (indexOfSeparator != -1) {
+            Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
+            return callUUID; // For robustness just use something
+        } else {
+            return callUUID.substring(0, indexOfSeparator);
+        }
     }
 
     @Override
@@ -252,7 +244,7 @@ public class MyConnectionService extends ConnectionService {
         String peerName = extras.getString("to", "uknown");
         String sessionId = extras.getString("sessionId", "unknown");
 
-        final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName);
+        final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName, sessionId);
         connection.setAddress(Uri.parse(peerName), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {

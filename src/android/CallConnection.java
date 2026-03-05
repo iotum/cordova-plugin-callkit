@@ -16,10 +16,12 @@ import android.util.Log;
 class CallConnection extends Connection {
     protected final MyConnectionService service;
     protected String peerName;
+    protected String sessionId;
 
-    CallConnection(MyConnectionService service, String peerName) {
+    CallConnection(MyConnectionService service, String peerName, String sessionId) {
         this.service = service;
         this.peerName = peerName;
+        this.sessionId = sessionId;
     }
 
     @Override
@@ -62,7 +64,7 @@ class CallConnection extends Connection {
             Intent serviceIntent = new Intent(context, CallAudioService.class);
             context.stopService(serviceIntent);
 
-            MyConnectionService.activeConnectionUUID = null;
+            MyConnectionService.onConnectionDisconnected(this.sessionId);
         }
     }
 }
