@@ -68,10 +68,12 @@ public class MyConnectionService extends ConnectionService {
             }
 
             String callUUID = payload.optString("call_uuid", "");
+            String sessionId = getSessionIdFromCallUUID(callUUID);
 
             if (payload.optBoolean("dismiss", false)) {
                 Log.d(TAG, "received intent with payload.dismiss indicating call is dismissed, call_uuid: " + callUUID);
-                Connection conn = connectionMap.get(callUUID);
+
+                Connection conn = connectionMap.get(sessionId);
                 if (conn == null) {
                     Log.e(TAG, "Cannot disconnect. No connection found with call_uuid: " + callUUID);
                 } else {
@@ -83,7 +85,7 @@ public class MyConnectionService extends ConnectionService {
                     }
                 }
             } else {
-                if (connectionMap.get(callUUID) != null) {
+                if (connectionMap.get(sessionId) != null) {
                     Log.d(TAG, "A connection is already created for call_uuid: " + callUUID);
                 } else {
                     if (connectionAddedMap.containsKey(callUUID)) {
@@ -174,6 +176,7 @@ public class MyConnectionService extends ConnectionService {
         if (sessionId.equals(activeSessionId)) {
             activeSessionId = null;
         }
+        Log.d(TAG, "Removing CallConnection from connectionMap, sessionId: " + sessionId);
         connectionMap.remove(sessionId);
     }
 
@@ -225,6 +228,7 @@ public class MyConnectionService extends ConnectionService {
         Log.d(TAG, "Created connection for callUUID: " + callUUID);
         connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
 
+        Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
         connectionMap.put(sessionId, connection);
 
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
@@ -277,6 +281,7 @@ public class MyConnectionService extends ConnectionService {
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
 
+        Log.d(TAG, "Adding OutgoingCallConnection to connectionMap, sessionId: " + sessionId);
         connectionMap.put(sessionId, connection);
 
         return connection;

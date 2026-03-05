@@ -240,12 +240,14 @@ public class CordovaCall extends CordovaPlugin {
             return true;
         } else if (action.equals("hold")) {
             String sessionId = args.getString(0);
+            Log.d(TAG, "sessionId: " + sessionId);
             Connection conn = MyConnectionService.getConnection(sessionId);
             if (conn != null) {
                 conn.onHold();
                 this.callbackContext.success("Call put on hold");
             } else {
-                this.callbackContext.error("No call found for session Id");
+                Log.e(TAG, "Can not hold - no connection found for session ID");
+                this.callbackContext.error("No call found for session ID");
             }
             return true;
         } else if (action.equals("unhold")) {
@@ -255,7 +257,8 @@ public class CordovaCall extends CordovaPlugin {
                 conn.onUnhold();
                 this.callbackContext.success("Call un-held");
             } else {
-                 this.callbackContext.error("No call found for session Id");
+                Log.e(TAG, "Can not unhold - no connection found for session ID");
+                this.callbackContext.error("No call found for session Id");
             }
             return true;
         } else if (action.equals("endCall")) {
