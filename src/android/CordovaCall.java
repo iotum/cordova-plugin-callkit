@@ -225,7 +225,6 @@ public class CordovaCall extends CordovaPlugin {
             }
             return true;
         } else if (action.equals("connectCall")) {
-            Log.d(TAG, "connectCall");
             String sessionId = args.getString(0);
             Connection conn = MyConnectionService.getConnection(sessionId);
             if (conn == null) {
