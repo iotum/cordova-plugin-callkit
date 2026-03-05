@@ -223,10 +223,10 @@ public class MyConnectionService extends ConnectionService {
     public static String getSessionIdFromCallUUID(String callUUID) {
         int indexOfSeparator = callUUID.indexOf(";");
         if (indexOfSeparator != -1) {
+            return callUUID.substring(0, indexOfSeparator);
+        } else {
             Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
             return callUUID; // For robustness just use something
-        } else {
-            return callUUID.substring(0, indexOfSeparator);
         }
     }
 
