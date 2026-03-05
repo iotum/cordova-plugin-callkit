@@ -247,6 +247,7 @@ public class CordovaCall extends CordovaPlugin {
             } else {
                 this.callbackContext.error("No call found for session Id");
             }
+            return true;
         } else if (action.equals("unhold")) {
             String sessionId = args.getString(0);
             Connection conn = MyConnectionService.getConnection(sessionId);
