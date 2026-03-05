@@ -116,7 +116,9 @@ public class MyConnectionService extends ConnectionService {
 
                         Log.d(TAG, "Adding new incoming connection, callUUID: " + callUUID);
 
-                        // After this a new connection is created (see onCreateIncomingConnection below)
+                        // Request Telecom to create a new incoming connection (see onCreateIncomingConnection / onCreateIncomingConnectionFailed).
+                        // Note: this call can legitimately fail when there is already a ringing call (MAX_RINGING_CALLS).
+                        // In that case we intentionally preserve the first ringing call and treat the failure as expected, not a regression.
                         tm.addNewIncomingCall(phoneAccountHandle, callInfo);
                         connectionAddedMap.put(callUUID, true);
                     }
