@@ -15,15 +15,12 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 class IncomingCallConnection extends CallConnection {
     private final String callUUID;
     private final String payloadString;
-    private final String callerName;
     private IncomingCallNotification incomingCallNotification;
-    private Runnable mainActivityChangeListener;
 
     IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName) {
-        super(service);
+        super(service, callerName);
         this.callUUID = callUUID;
         this.payloadString = payloadString;
-        this.callerName = callerName;
     }
 
     @Override
@@ -53,16 +50,9 @@ class IncomingCallConnection extends CallConnection {
 
         cancelIncomingCallNotification();
 
-        this.setActive();
-        MyConnectionService.activeConnectionUUID = callUUID;
-
         service.showWebApp("answerCall", payloadString);
 
-        Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
-        Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
-        intent.putExtra("peerName", callerName);
-        service.startForegroundService(intent);
-
+        // Note: emitEvent() will enqueue events until the web app is ready + a listener is registered
         Log.d(MyConnectionService.TAG, "Emitting CordovaCall answer event...");
         CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
     }
@@ -91,9 +81,9 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onStateChanged(int state) {
-        Log.d(MyConnectionService.TAG, "connection onStateChanged: " + state);
-
-        if (state == Connection.STATE_DISCONNECTED) {
+        if (state == Connection.STATE_ACTIVE) {
+            MyConnectionService.activeConnectionUUID = callUUID;
+        } else  if (state == Connection.STATE_DISCONNECTED) {
             MyConnectionService.connectionMap.remove(callUUID);
             if (MyConnectionService.activeConnectionUUID != null && MyConnectionService.activeConnectionUUID.equals(callUUID)) {
                 MyConnectionService.activeConnectionUUID = null;

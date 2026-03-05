@@ -1,20 +1,14 @@
 package com.dmarc.cordovacall;
 
-import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
-
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.app.NotificationChannel;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
-import android.media.AudioManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.telecom.CallAudioState;
 import android.telecom.Connection;
@@ -24,14 +18,8 @@ import android.telecom.DisconnectCause;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
-import android.os.Handler;
 import android.net.Uri;
 import android.util.Log;
-
-import androidx.annotation.NonNull;
-import androidx.core.app.NotificationCompat;
-import androidx.lifecycle.DefaultLifecycleObserver;
-import androidx.lifecycle.LifecycleOwner;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -259,18 +247,15 @@ public class MyConnectionService extends ConnectionService {
 
     @Override
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
-        final OutgoingCallConnection connection = new OutgoingCallConnection(this);
+        String peerName = request.getExtras().getString("to", "uknown");
+
+        final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName);
         connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
             connection.setStatusHints(statusHints);
         }
-
-        Log.d(TAG, "Starting CallAudioService foreground service...");
-        Intent intent = new Intent(getApplicationContext(), CallAudioService.class);
-        intent.putExtra("peerName", request.getExtras().getString("to", "uknown"));
-        startForegroundService(intent);
 
         // Set capabilities to indicate this handles audio
         connection.setConnectionCapabilities(
@@ -285,7 +270,6 @@ public class MyConnectionService extends ConnectionService {
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
 
-        activeOutgoingConnection = connection;
         return connection;
     }
 }

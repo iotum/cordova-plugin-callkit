@@ -15,9 +15,11 @@ import android.util.Log;
  */
 class CallConnection extends Connection {
     protected final MyConnectionService service;
+    protected String peerName;
 
-    CallConnection(MyConnectionService service) {
+    CallConnection(MyConnectionService service, String peerName) {
         this.service = service;
+        this.peerName = peerName;
     }
 
     @Override
@@ -40,15 +42,27 @@ class CallConnection extends Connection {
     @Override
     public void onStateChanged(int state) {
         super.onStateChanged(state);
-        if (state == Connection.STATE_ACTIVE) {
+        Log.d(MyConnectionService.TAG, "connection onStateChanged new state: " + Connection.stateToString(state));
+
+        if (state == Connection.STATE_RINGING || state == Connection.STATE_DIALING) {
+            // NOTE: CallAudioService should be started before mic access, in order to work.
+            // IMPORTANT: This preserves the ability to use the mic when the app is in the background!
+            Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
+            Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
+            intent.putExtra("peerName", peerName);
+            service.startForegroundService(intent);
+        } else if (state == Connection.STATE_ACTIVE) {
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();
             AudioRouteMonitor.onCallEnded();
+
             Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
             Context context = service.getApplicationContext();
             Intent serviceIntent = new Intent(context, CallAudioService.class);
             context.stopService(serviceIntent);
+
+            MyConnectionService.activeConnectionUUID = null;
         }
     }
 }
