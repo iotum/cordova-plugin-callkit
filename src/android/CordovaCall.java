@@ -238,6 +238,25 @@ public class CordovaCall extends CordovaPlugin {
 
             this.callbackContext.success("Call connected successfully");
             return true;
+        } else if (action.equals("hold")) {
+            String sessionId = args.getString(0);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn != null) {
+                conn.onHold();
+                this.callbackContext.success("Call put on hold");
+            } else {
+                this.callbackContext.error("No call found for session Id");
+            }
+        } else if (action.equals("unhold")) {
+            String sessionId = args.getString(0);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn != null) {
+                conn.onUnhold();
+                this.callbackContext.success("Call un-held");
+            } else {
+                 this.callbackContext.error("No call found for session Id");
+            }
+            return true;
         } else if (action.equals("endCall")) {
             String sessionId = args.getString(0);
             Connection conn = MyConnectionService.getConnection(sessionId);
