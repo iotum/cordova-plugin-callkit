@@ -88,9 +88,6 @@ class IncomingCallConnection extends CallConnection {
             if (MyConnectionService.activeConnectionUUID != null && MyConnectionService.activeConnectionUUID.equals(callUUID)) {
                 MyConnectionService.activeConnectionUUID = null;
             }
-            if (this.mainActivityChangeListener != null) {
-                CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
-            }
             cancelIncomingCallNotification();
         }
 

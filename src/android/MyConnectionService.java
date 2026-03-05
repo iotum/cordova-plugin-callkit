@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MyConnectionService extends ConnectionService {
 
     static final String TAG = "MyConnectionService";
-    static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are call_uuid strings
+    static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are session id strings
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
 
     private CallActionReceiver callActionReceiver;
@@ -163,6 +163,10 @@ public class MyConnectionService extends ConnectionService {
         return activeConnectionUUID != null ? connectionMap.get(activeConnectionUUID) : null;
     }
 
+    public static Connection getConnection(String sessionId) {
+        return connectionMap.get(sessionId);
+    }
+
     public static void endActiveCall() {
         if (activeConnectionUUID != null) {
             Connection conn = connectionMap.get(activeConnectionUUID);
@@ -219,7 +223,15 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "Created connection for callUUID: " + callUUID);
         connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
-        connectionMap.put(callUUID, connection);
+
+        int indexOfSeparator = callUUID.indexOf(";");
+        if (indexOfSeparator != -1) {
+            Log.e(TAG, "callUUID does not have a ; can not properly extract a session id!");
+            connectionMap.put(callUUID, connection);
+        } else {
+            String sessionId = callUUID.substring(0, indexOfSeparator);
+            connectionMap.put(sessionId, connection);
+        }
 
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
@@ -236,10 +248,12 @@ public class MyConnectionService extends ConnectionService {
 
     @Override
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
-        String peerName = request.getExtras().getString("to", "uknown");
+        Bundle extras = request.getExtras();
+        String peerName = extras.getString("to", "uknown");
+        String sessionId = extras.getString("sessionId", "unknown");
 
         final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName);
-        connection.setAddress(Uri.parse(request.getExtras().getString("to")), TelecomManager.PRESENTATION_ALLOWED);
+        connection.setAddress(Uri.parse(peerName), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
         if(icon != null) {
             StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
@@ -258,6 +272,8 @@ public class MyConnectionService extends ConnectionService {
 
         connection.setDialing();
         CordovaCall.emitEvent("sendCall", new PluginResult(PluginResult.Status.OK, "sendCall event called successfully"));
+
+        connectionMap.put(sessionId, connection);
 
         return connection;
     }
