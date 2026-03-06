@@ -124,7 +124,7 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    static String activeSessionId;
+    static volatile String activeSessionId;
 
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;

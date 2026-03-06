@@ -9,6 +9,8 @@ import android.telecom.Connection;
 import android.telecom.DisconnectCause;
 import android.util.Log;
 
+import java.util.Objects;
+
 /**
  * Base class for both incoming and outgoing connections.
  * Holds the common logic shared between IncomingCallConnection and OutgoingCallConnection.
@@ -54,7 +56,12 @@ class CallConnection extends Connection {
             intent.putExtra("peerName", peerName);
             service.startForegroundService(intent);
         } else if (state == Connection.STATE_ACTIVE) {
+            MyConnectionService.activeSessionId = this.sessionId;
             AudioRouteMonitor.onCallConnected();
+        } else if (state == Connection.STATE_HOLDING) {
+            if (Objects.equals(this.sessionId, MyConnectionService.activeSessionId)) {
+                MyConnectionService.activeSessionId = null;
+            }
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();
             AudioRouteMonitor.onCallEnded();
