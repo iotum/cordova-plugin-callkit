@@ -258,7 +258,7 @@ public class MyConnectionService extends ConnectionService {
     @Override
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
         Bundle extras = request.getExtras();
-        String peerName = extras.getString("to", "uknown");
+        String peerName = extras.getString("to", "unknown");
         String sessionId = extras.getString("sessionId", "unknown");
 
         final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName, sessionId);
