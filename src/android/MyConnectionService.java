@@ -68,7 +68,7 @@ public class MyConnectionService extends ConnectionService {
             }
 
             String callUUID = payload.optString("call_uuid", "");
-            String sessionId = getSessionIdFromCallUUID(callUUID);
+            String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(callUUID));
 
             if (payload.optBoolean("dismiss", false)) {
                 Log.d(TAG, "received intent with payload.dismiss indicating call is dismissed, call_uuid: " + callUUID);
@@ -266,7 +266,7 @@ public class MyConnectionService extends ConnectionService {
         if (sessionId == null) {
             throw new RuntimeException("onCreateOutgoingConnection: Must supply a sessionId!");
         }
-        
+
         final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName, sessionId);
         connection.setAddress(Uri.parse(peerName), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
