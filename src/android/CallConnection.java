@@ -31,16 +31,6 @@ class CallConnection extends Connection {
     }
 
     @Override
-    public void onHold() {
-        this.setOnHold();
-    }
-
-    @Override
-    public void onUnhold() {
-        this.setActive();
-    }
-
-    @Override
     public void onAbort() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
     }
@@ -69,13 +59,10 @@ class CallConnection extends Connection {
             this.destroy();
             AudioRouteMonitor.onCallEnded();
 
-            // Only stop CallAudioService when there are no remaining active calls.
-            if (AudioRouteMonitor.activeCallCount <= 0) {
-                Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
-                Context context = service.getApplicationContext();
-                Intent serviceIntent = new Intent(context, CallAudioService.class);
-                context.stopService(serviceIntent);
-            }
+            Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
+            Context context = service.getApplicationContext();
+            Intent serviceIntent = new Intent(context, CallAudioService.class);
+            context.stopService(serviceIntent);
 
             MyConnectionService.onConnectionDisconnected(this.sessionId);
         }

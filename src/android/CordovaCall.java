@@ -241,7 +241,7 @@ public class CordovaCall extends CordovaPlugin {
             Log.d(TAG, "sessionId: " + sessionId);
             Connection conn = MyConnectionService.getConnection(sessionId);
             if (conn != null) {
-                conn.onHold();
+                conn.setOnHold();
                 this.callbackContext.success("Call put on hold");
             } else {
                 Log.e(TAG, "Can not hold - no connection found for session ID");
@@ -252,7 +252,7 @@ public class CordovaCall extends CordovaPlugin {
             String sessionId = args.getString(0);
             Connection conn = MyConnectionService.getConnection(sessionId);
             if (conn != null) {
-                conn.onUnhold();
+                conn.setActive();
                 this.callbackContext.success("Call un-held");
             } else {
                 Log.e(TAG, "Can not unhold - no connection found for session ID");
