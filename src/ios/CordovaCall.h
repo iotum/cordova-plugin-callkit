@@ -36,6 +36,7 @@
 - (void)unmute:(CDVInvokedUrlCommand*)command;
 - (void)speakerOn:(CDVInvokedUrlCommand*)command;
 - (void)speakerOff:(CDVInvokedUrlCommand*)command;
+- (void)getAudioRoute:(CDVInvokedUrlCommand*)command;
 - (void)callNumber:(CDVInvokedUrlCommand*)command;
 - (void)hold:(CDVInvokedUrlCommand*)command;
 - (void)unhold:(CDVInvokedUrlCommand*)command;

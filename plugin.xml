@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<plugin id="cordova-plugin-callkit" version="1.3.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+<plugin id="cordova-plugin-callkit" version="1.3.2" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
     <name>Cordova CallKit</name>
 
     <js-module name="VoIPPushNotification" src="www/VoIPPushNotification.js">
@@ -67,6 +67,10 @@
         <source-file src="src/android/MyConnectionService.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/CallAudioService.java" target-dir="src/com/dmarc/cordovacall" />
         <source-file src="src/android/PhoneAccountManager.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/CallConnection.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/IncomingCallConnection.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/OutgoingCallConnection.java" target-dir="src/com/dmarc/cordovacall" />
+        <source-file src="src/android/AudioRouteMonitor.java" target-dir="src/com/dmarc/cordovacall" />
   </platform>
 
     <platform name="ios">

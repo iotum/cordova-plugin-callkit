@@ -1,7 +1,5 @@
 package com.dmarc.cordovacall;
 
-import static android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT;
-
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -9,7 +7,6 @@ import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
 
 import android.app.Activity;
-import android.app.Application;
 import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.os.Build;
@@ -35,25 +32,29 @@ import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.core.app.NotificationCompat;
-
 public class CordovaCall extends CordovaPlugin {
     private static String READ_PHONE_NUMBERS_REQUIRED = "read_phone_numbers_permission_required";
-    private static String RECORD_AUDIO_REQUIRED = "record_audio_permission_required";
-    private static String CAMERA_PERMISSION_REQUIRED = "camera_permission_required";
 
     private static String TAG = "CordovaCall";
-    public static final int CALL_PHONE_REQ_CODE = 0;
     public static final int REAL_PHONE_CALL = 1;
-    public static final int RECORD_AUDIO_REQ_CODE = 2;
-    public static final int CAMERA_REQ_CODE = 3;
 
-    private int permissionCounter = 0;
-    private String pendingAction;
-    private JSONArray pendingActionArgs;
+    // Audio Route Constants (standardized across platforms)
+    public static class AudioRoute {
+        public static final String EARPIECE = "earpiece";
+        public static final String BLUETOOTH = "bluetooth";
+        public static final String SPEAKER = "speaker";
+        public static final String WIRED_HEADSET = "wired_headset";
+        public static final String UNKNOWN = "unknown";
+    }
+
+    // Audio Route Change Types (standardized across platforms)
+    public static class AudioRouteChangeType {
+        public static final String DEVICE_CHANGED = "deviceChanged";
+        public static final String PROGRAMMATIC_CHANGE = "programmaticChange";
+    }
+
     private TelecomManager tm;
+    private AudioManager audioManager;
 
     private CallbackContext callbackContext;
     private String appName;
@@ -70,6 +71,7 @@ public class CordovaCall extends CordovaPlugin {
         callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
+        callbackContextMap.put("audioRouteChange", new ArrayList<CallbackContext>());
     }
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
@@ -148,7 +150,12 @@ public class CordovaCall extends CordovaPlugin {
             }
         });
 
+        // Initialize AudioManager for audio route change monitoring
+        this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+
         instance = this;
+
+        AudioRouteMonitor.setInstance(new AudioRouteMonitor(cordova, this.audioManager));
     }
 
     public void setMainActivityInForeground(boolean isInForeground) {
@@ -176,9 +183,6 @@ public class CordovaCall extends CordovaPlugin {
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
-        if (this.pendingAction != null) {
-            this.checkCallPermission();
-        }
         setMainActivityInForeground(true);
     }
 
@@ -202,10 +206,7 @@ public class CordovaCall extends CordovaPlugin {
                 }
             } else {
                 from = args.getString(0);
-                permissionCounter = 2;
-                pendingAction = "receiveCall";
-                pendingActionArgs = args;
-                this.checkCallPermission();
+                this.receiveCall();
             }
             return true;
         } else if (action.equals("sendCall")) {
@@ -220,10 +221,7 @@ public class CordovaCall extends CordovaPlugin {
                 }
             } else {
                 to = args.getString(0);
-                permissionCounter = 2;
-                pendingAction = "sendCall";
-                pendingActionArgs = args;
-                this.checkCallPermission();
+                this.sendCall();
             }
             return true;
         } else if (action.equals("connectCall")) {
@@ -234,6 +232,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("Your call is already connected");
             } else {
                 conn.setActive();
+                AudioRouteMonitor.onCallConnected(); // Start monitoring if this is the first call
                 Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 this.cordova.getActivity().getApplicationContext().startActivity(intent);
@@ -246,6 +245,7 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("No call exists for you to end");
             } else {
                 MyConnectionService.endActiveCall();
+                AudioRouteMonitor.onCallEnded(); // Stop monitoring if this is the last call
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {
@@ -302,6 +302,9 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("speakerOff")) {
             this.speakerOff();
             return true;
+        } else if (action.equals("getAudioRoute")) {
+            this.getAudioRoute(callbackContext);
+            return true;
         } else if (action.equals("callNumber")) {
             realCallTo = args.getString(0);
             if(realCallTo != null) {
@@ -316,7 +319,6 @@ public class CordovaCall extends CordovaPlugin {
             }
             return true;
         } else if (action.equals("checkCallPermission")) {
-            permissionCounter = 2;
             this.checkCallPermission();
             return true;
         } else if (action.equals("canUseFullScreenIntent")) {
@@ -352,53 +354,19 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void checkCallPermission() {
-        if(permissionCounter >= 1) {
-            // Check READ_PHONE_NUMBERS permission
-            if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
-                if (this.pendingAction != null) {
-                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
-                }
-                return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
-            }
-
-            // Check RECORD_AUDIO permission for microphone access
-            if (!CordovaCall.getCordova().hasPermission(Manifest.permission.RECORD_AUDIO)) {
-                cordova.requestPermission(this, RECORD_AUDIO_REQ_CODE, Manifest.permission.RECORD_AUDIO);
-                return; // Return here and continue in onRequestPermissionResult
-            }
-
-            Boolean requestCamera = false;
-            try {
-                requestCamera = "sendCall".equals(this.pendingAction) && this.pendingActionArgs.getString(1).startsWith("meeting");
-            } catch (JSONException e) {
-                // Because pendingActionArgs is a JSON array we must either declare this function throws JSONExceptions or suround with try/catch
-                throw new RuntimeException(e);
-            }
-
-            if (requestCamera && !CordovaCall.getCordova().hasPermission(Manifest.permission.CAMERA)) {
-                cordova.requestPermission(this, CAMERA_REQ_CODE, Manifest.permission.CAMERA);
-                return; // Return here and continue in onRequestPermissionResult
-            }
-
-            PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
-            PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
-            if(currentPhoneAccount.isEnabled()) {
-                if(pendingAction == "receiveCall") {
-                    this.receiveCall();
-                } else if(pendingAction == "sendCall") {
-                    this.sendCall();
-                }
-            } else {
-                if(permissionCounter == 2) {
-                    Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
-                    phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
-                } else {
-                    this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
-                }
-            }
+        // Your client web app should have already checked/requested the READ_PHONE_NUMBERS runtime permission before hand.
+        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+            this.callbackContext.error(READ_PHONE_NUMBERS_REQUIRED);
+            return; // Don't proceed to call TelecomManager.getPhoneAccount() as that would throw an error which in some cases may crash the entire app
         }
-        permissionCounter--;
+
+        PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
+        PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
+        if (currentPhoneAccount == null || !currentPhoneAccount.isEnabled()) {
+            Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
+            phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
+        }
     }
 
     private void receiveCall() {
@@ -408,7 +376,6 @@ public class CordovaCall extends CordovaPlugin {
         PhoneAccountHandle handle = PhoneAccountManager.getPhoneAccountHandle(this.cordova.getActivity().getApplicationContext());
         tm.addNewIncomingCall(handle, callInfo);
 
-        permissionCounter = 0;
         this.callbackContext.success("Incoming call successful");
 
         this.bringAppToFront();
@@ -416,6 +383,12 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     private void sendCall() {
+        // Your client web app should have already checked/requested READ_PHONE_NUMBERS before hand
+        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
+            this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
+            return; // Important: as attempting do tm.placeCall() without permission crashes the entire app
+        }
+
         Uri uri = Uri.fromParts("tel", to, null);
         Bundle callInfoBundle = new Bundle();
         callInfoBundle.putString("to",to);
@@ -426,26 +399,36 @@ public class CordovaCall extends CordovaPlugin {
         callInfo.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle);
 
         callInfo.putBoolean(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, true);
-        tm.placeCall(uri, callInfo);
-        permissionCounter = 0;
+
+        PhoneAccount currentPhoneAccount = tm.getPhoneAccount(handle); // Requires android.permissions.READ_PHONE_NUMBERS
+        if (currentPhoneAccount == null || !currentPhoneAccount.isEnabled()) {
+            this.callbackContext.error("no_phone_account_enabled");
+            return;
+        }
+
+        if (!CordovaCall.getCordova().hasPermission(Manifest.permission.MANAGE_OWN_CALLS)) {
+            // This should in theory never happen - assuming no one removes MANAGE_OWN_CALLS from the android manifest
+            this.callbackContext.error("MANAGE_OWN_CALLS permission not declared - required in order to use TelecomManager.placeCall()");
+            return;
+        }
+
+        tm.placeCall(uri, callInfo); // Triggers sometime later, an onCreateOutgoingConnection callback to your ConnectionService
+
         this.callbackContext.success("Outgoing call successful");
     }
 
     private void bringAppToFront() {
         Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
-        // Intent.FLAG_ACTIVITY_REORDER_TO_FRONT Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT | Intent.FLAG_FROM_BACKGROUND);
         this.cordova.getActivity().getApplicationContext().startActivity(intent);
     }
 
     private void mute() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setMicrophoneMute(true);
+        this.audioManager.setMicrophoneMute(true);
     }
 
     private void unmute() {
-        AudioManager audioManager = (AudioManager) this.cordova.getActivity().getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
-        audioManager.setMicrophoneMute(false);
+        this.audioManager.setMicrophoneMute(false);
     }
 
     private void speakerOn() {
@@ -473,28 +456,27 @@ public class CordovaCall extends CordovaPlugin {
         }
     }
 
+    private void getAudioRoute(CallbackContext callbackContext) {
+        try {
+            AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+            String route = monitoring != null ? monitoring.getCurrentAudioRoute() : AudioRoute.UNKNOWN;
+            callbackContext.success(route);
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting current audio route: " + e.getMessage());
+            callbackContext.error("Failed to get current audio route");
+        }
+    }
+
     private void setConnectionAudioRoute(Connection conn, int route) {
         if (conn != null && route >= 0) {
             conn.setAudioRoute(route);
-            Log.i(TAG, "setConnectionAudioRoute: " + getRouteName(route));
-            this.callbackContext.success("Connection audio route changed to: " + route);
+            AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+            String routeName = monitoring != null ? monitoring.getRouteNameFromState(route) : String.valueOf(route);
+            Log.i(TAG, "setConnectionAudioRoute: " + routeName);
+            this.callbackContext.success("Connection audio route changed to: " + routeName);
         } else {
             this.callbackContext.error("No active connection");
         }
-    }
-
-    private String getRouteName(int route) {
-        switch (route) {
-            case CallAudioState.ROUTE_EARPIECE: return "Earpiece";
-            case CallAudioState.ROUTE_BLUETOOTH: return "Bluetooth";
-            case CallAudioState.ROUTE_SPEAKER: return "Speaker";
-            case CallAudioState.ROUTE_WIRED_HEADSET: return "Wired Headset";
-            default: return "Unknown";
-        }
-    }
-
-    protected void getCallPhonePermission() {
-        cordova.requestPermission(this, CALL_PHONE_REQ_CODE, Manifest.permission.CALL_PHONE);
     }
 
     protected void callNumberPhonePermission() {
@@ -518,35 +500,35 @@ public class CordovaCall extends CordovaPlugin {
         {
             if(r == PackageManager.PERMISSION_DENIED)
             {
-                if(requestCode == RECORD_AUDIO_REQ_CODE) {
-                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, RECORD_AUDIO_REQUIRED));
-                } else if (requestCode == CAMERA_REQ_CODE) {
-                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, CAMERA_PERMISSION_REQUIRED));
-                } else {
-                    this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "CALL_PHONE Permission Denied"));
-                }
+                this.callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "CALL_PHONE Permission Denied"));
                 return;
             }
         }
         switch(requestCode)
         {
-            case CALL_PHONE_REQ_CODE:
-                this.sendCall();
-                break;
             case REAL_PHONE_CALL:
                 this.callNumber();
-                break;
-            case RECORD_AUDIO_REQ_CODE:
-            case CAMERA_REQ_CODE:
-                // Permission granted, continue with the call process
-                this.checkCallPermission();
                 break;
         }
     }
 
-    public void requestPermissions() {
-        Intent phoneIntent = new Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS);
-        phoneIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        this.cordova.getActivity().getApplicationContext().startActivity(phoneIntent);
+    @Override
+    public void onReset() {
+        // Ensure audio route monitoring is stopped when the WebView is reset
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.stopMonitoring();
+        }
+        super.onReset();
+    }
+
+    @Override
+    public void onDestroy() {
+        // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
+        AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
+        if (monitoring != null) {
+            monitoring.stopMonitoring();
+        }
+        super.onDestroy();
     }
 }
