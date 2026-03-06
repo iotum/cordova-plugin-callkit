@@ -263,8 +263,12 @@ public class MyConnectionService extends ConnectionService {
     public Connection onCreateOutgoingConnection(PhoneAccountHandle connectionManagerPhoneAccount, ConnectionRequest request) {
         Bundle extras = request.getExtras();
         String peerName = extras.getString("to", "unknown");
-        String sessionId = extras.getString("sessionId", "unknown");
+        String sessionId = extras.getString("sessionId");
 
+        if (sessionId == null) {
+            throw new RuntimeException("onCreateOutgoingConnection: Must supply a sessionId!");
+        }
+        
         final OutgoingCallConnection connection = new OutgoingCallConnection(this, peerName, sessionId);
         connection.setAddress(Uri.parse(peerName), TelecomManager.PRESENTATION_ALLOWED);
         Icon icon = CordovaCall.getIcon();
