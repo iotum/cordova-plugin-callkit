@@ -106,6 +106,14 @@ exports.callNumber = function (to, success, error) {
   exec(success, error, "CordovaCall", "callNumber", [to]);
 };
 
+exports.hold = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "hold", [sessionId]);
+};
+
+exports.unhold = function (sessionId, success, error) {
+  exec(success, error, "CordovaCall", "unhold", [sessionId]);
+};
+
 exports.on = function (e, f) {
   var success = function (message) {
     f(message);
