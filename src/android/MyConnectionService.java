@@ -246,6 +246,14 @@ public class MyConnectionService extends ConnectionService {
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
         String payloadString = requestExtras.getString("payload");
         Log.e(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
+        try {
+            JSONObject payload = new JSONObject(payloadString);
+            String callUUID = payload.getString("call_uuid");
+            connectionAddedMap.remove(callUUID);
+            Log.d(TAG, "Removed connectionAddedMap entry for failed incoming connection, callUUID: " + callUUID);
+        } catch (JSONException e) {
+            Log.e(TAG, "onCreateIncomingConnectionFailed failed to parse payload: " + payloadString + ", error: " + e.getMessage());
+        }
     }
 
     @Override
