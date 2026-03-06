@@ -233,9 +233,8 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("Your call is already connected");
             } else {
                 conn.setActive();
-            }
-
-            this.callbackContext.success("Call connected successfully");
+                this.callbackContext.success("Call connected successfully");
+            }            
             return true;
         } else if (action.equals("hold")) {
             String sessionId = args.getString(0);
