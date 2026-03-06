@@ -59,10 +59,13 @@ class CallConnection extends Connection {
             this.destroy();
             AudioRouteMonitor.onCallEnded();
 
-            Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
-            Context context = service.getApplicationContext();
-            Intent serviceIntent = new Intent(context, CallAudioService.class);
-            context.stopService(serviceIntent);
+            // Only stop CallAudioService when there are no remaining active calls.
+            if (AudioRouteMonitor.activeCallCount <= 0) {
+                Log.d(MyConnectionService.TAG, "Stopping CallAudioService...");
+                Context context = service.getApplicationContext();
+                Intent serviceIntent = new Intent(context, CallAudioService.class);
+                context.stopService(serviceIntent);
+            }
 
             MyConnectionService.onConnectionDisconnected(this.sessionId);
         }
