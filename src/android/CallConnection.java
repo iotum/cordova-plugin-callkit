@@ -31,6 +31,16 @@ class CallConnection extends Connection {
     }
 
     @Override
+    public void onHold() {
+        this.setOnHold();
+    }
+
+    @Override
+    public void onUnhold() {
+        this.setActive();
+    }
+
+    @Override
     public void onAbort() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
     }
