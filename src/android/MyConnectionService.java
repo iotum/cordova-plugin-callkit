@@ -124,12 +124,6 @@ public class MyConnectionService extends ConnectionService {
         return START_STICKY; // System will attempt to re-create the service if it is killed.
     }
 
-    static String activeSessionId;
-
-    public void setActiveSessionId(String sessionId) {
-        MyConnectionService.activeSessionId = sessionId;
-    }
-
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
         try {
@@ -167,9 +161,16 @@ public class MyConnectionService extends ConnectionService {
         this.startActivity(intent);
     }
 
-    // Returns the connection for the active session (or null if none)
+    // Returns the connection for the active session (or null if none).
+    // connectionMap is a ConcurrentHashMap so iteration is thread-safe.
+    // Per Android Telecom semantics, at most one connection should be STATE_ACTIVE at a time.
     public static Connection getConnection() {
-        return activeSessionId != null ? connectionMap.get(activeSessionId) : null;
+        for (Connection conn : connectionMap.values()) {
+            if (conn.getState() == Connection.STATE_ACTIVE) {
+                return conn;
+            }
+        }
+        return null;
     }
 
     public static Connection getConnection(String sessionId) {
@@ -177,9 +178,6 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public static void onConnectionDisconnected(String sessionId) {
-        if (sessionId.equals(activeSessionId)) {
-            activeSessionId = null;
-        }
         Log.d(TAG, "Removing CallConnection from connectionMap, sessionId: " + sessionId);
         connectionMap.remove(sessionId);
     }
