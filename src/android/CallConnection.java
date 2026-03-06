@@ -54,6 +54,8 @@ class CallConnection extends Connection {
             intent.putExtra("peerName", peerName);
             service.startForegroundService(intent);
         } else if (state == Connection.STATE_ACTIVE) {
+            service.setActiveSessionId(this.sessionId);
+
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();

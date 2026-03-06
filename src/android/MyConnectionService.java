@@ -126,6 +126,10 @@ public class MyConnectionService extends ConnectionService {
 
     static String activeSessionId;
 
+    public void setActiveSessionId(String sessionId) {
+        MyConnectionService.activeSessionId = sessionId;
+    }
+
     public static Connection getConnectionByPayload(String pushMessagePayload) {
         JSONObject payload;
         try {
