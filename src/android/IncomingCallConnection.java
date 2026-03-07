@@ -28,7 +28,7 @@ class IncomingCallConnection extends CallConnection {
         Log.d(MyConnectionService.TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
         this.setRinging();
 
-        this.incomingCallNotification = new IncomingCallNotification(payloadString, service.getApplicationContext());
+        this.incomingCallNotification = new IncomingCallNotification(payloadString, service.getApplicationContext(), this.sessionId);
         Notification notification = this.incomingCallNotification.build();
 
         NotificationManager notificationManager = (NotificationManager) service.getSystemService(Context.NOTIFICATION_SERVICE);

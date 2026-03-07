@@ -14,12 +14,14 @@ public class CallActionReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         Log.d(TAG, "onReceive, intent action: " + action);
 
+        String sessionId = intent.getStringExtra("sessionId");
+        Connection conn = MyConnectionService.getConnection(sessionId);
+
         if (action.equals("hangUpCall")) {
-            Connection activeConnection = MyConnectionService.getConnection();
-            if (activeConnection != null) {
-                activeConnection.onDisconnect();
+            if (conn != null) {
+                conn.onDisconnect();
             } else {
-                Log.d(TAG, "no active call to disconnect (possibly already disconnected), closing notification");
+                Log.d(TAG, "no call to disconnect (possibly already disconnected), closing notification");
                 // Normally: we disconnect the telecom connection, which brings down the CallAudioService foreground service and its notification in turn
                 // For robustness (to prevent any orphaned ongoing notification) ensure the foreground service + notification is shutdown
                 Intent serviceIntent = new Intent(context, CallAudioService.class);
@@ -27,10 +29,6 @@ public class CallActionReceiver extends BroadcastReceiver {
             }
             return;
         }
-
-        String pushMessagePayload = intent.getStringExtra("pushMessagePayload");
-
-        Connection conn = MyConnectionService.getConnectionByPayload(pushMessagePayload);
 
         if (conn != null) {
             if (action.equals("declineCall")) {
@@ -41,7 +39,7 @@ public class CallActionReceiver extends BroadcastReceiver {
                 throw new RuntimeException("Invalid action: " + action);
             }
         } else {
-            Log.d(TAG, "Exiting, connection no longer exists. pushMessagePayload: " + pushMessagePayload);
+            Log.d(TAG, "Exiting, connection no longer exists. sessionId: " + sessionId);
         }
     }
 }

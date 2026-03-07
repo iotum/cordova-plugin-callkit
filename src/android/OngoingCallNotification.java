@@ -20,18 +20,20 @@ public class OngoingCallNotification {
     private static final String TAG = "OngoingCallNotification";
 
     private String peerName;
+    private String sessionId;
     private Integer notificationID;
     private Context context;
     private NotificationManager notificationManager;
 
     private static final String NOTIFICATION_CHANNEL_ID = "ongoing_calls";
 
-    public OngoingCallNotification(Context context, String peerName) {
+    public OngoingCallNotification(Context context, String peerName, String sessionId) {
         this.notificationID = new Random().nextInt(100000) + 1;
         this.context = context;
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
         this.peerName = peerName;
+        this.sessionId = sessionId;
 
         this.createNotificationChannel();
     }
@@ -40,6 +42,7 @@ public class OngoingCallNotification {
         Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
         hangupIntent.setAction("hangUpCall");
         hangupIntent.putExtra("notificationID", this.notificationID);
+        hangupIntent.putExtra("sessionId", this.sessionId);
         PendingIntent hangupPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, hangupIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

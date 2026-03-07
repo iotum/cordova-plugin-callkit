@@ -52,8 +52,11 @@ class CallConnection extends Connection {
             Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
             Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
             intent.putExtra("peerName", peerName);
+            intent.putExtra("sessionId", this.sessionId);
             service.startForegroundService(intent);
         } else if (state == Connection.STATE_ACTIVE) {
+            service.setActiveSessionId(this.sessionId);
+
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();
