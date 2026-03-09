@@ -245,7 +245,13 @@ public class MyConnectionService extends ConnectionService {
         super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request);
         Bundle requestExtras = request.getExtras() != null ? request.getExtras() : new Bundle();
         String payloadString = requestExtras.getString("payload");
-        Log.e(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
+        boolean hasExistingRingingCall = connectionMap.values().stream()
+                .anyMatch(conn -> conn.getState() == Connection.STATE_RINGING);
+        if (hasExistingRingingCall) {
+            Log.d(TAG, "onCreateIncomingConnectionFailed due to existing ringing call (MAX_RINGING_CALLS), payload: " + payloadString);
+        } else {
+            Log.e(TAG, "onCreateIncomingConnectionFailed, payload: " + payloadString);
+        }
         try {
             JSONObject payload = new JSONObject(payloadString);
             String callUUID = payload.getString("call_uuid");
