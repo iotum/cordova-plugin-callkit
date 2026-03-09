@@ -131,8 +131,9 @@ public class MyConnectionService extends ConnectionService {
         } catch (JSONException e) {
             throw new RuntimeException("Failed to parse payload JSON string: " + e);
         }
-        String callUUID = payload.optString("call_uuid");
-        String sessionId = getSessionIdFromCallUUID(callUUID);
+
+        String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(payload.optString("call_uuid")));
+
         return connectionMap.get(sessionId);
     }
 
