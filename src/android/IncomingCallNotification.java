@@ -26,14 +26,16 @@ public class IncomingCallNotification {
     private String pushMessagePayload;
     private Integer notificationID;
     private Context context;
+    private String sessionId;
     private NotificationManager notificationManager;
 
     private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
-    public IncomingCallNotification(String pushMessagePayload, Context context) {
+    public IncomingCallNotification(String pushMessagePayload, Context context, String sessionId) {
         this.pushMessagePayload = pushMessagePayload;
         this.notificationID = new Random().nextInt(100000) + 1;
         this.context = context;
+        this.sessionId = sessionId;
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
         this.createNotificationChannel();
@@ -47,6 +49,7 @@ public class IncomingCallNotification {
         Intent answerIntent = new Intent(this.context, CallActionReceiver.class);
         answerIntent.setAction("answerCall");
         answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerIntent.putExtra("sessionId", this.sessionId);
         answerIntent.putExtra("notificationID", this.notificationID);
         PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
                 this.context, 0, answerIntent,
@@ -55,7 +58,7 @@ public class IncomingCallNotification {
 
         Intent declineIntent = new Intent(this.context, CallActionReceiver.class);
         declineIntent.setAction("declineCall");
-        declineIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        declineIntent.putExtra("sessionId", this.sessionId);
         declineIntent.putExtra("notificationID", this.notificationID);
         PendingIntent declinePendingIntent = PendingIntent.getBroadcast(
                 this.context, 1, declineIntent,

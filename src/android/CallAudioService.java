@@ -33,8 +33,9 @@ public class CallAudioService extends Service {
         }
 
         String peerName = intent.getStringExtra("peerName");
+        String sessionId = intent.getStringExtra("sessionId");
 
-        OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName);
+        OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId);
 
         Notification notification = onGoingCallNotification.build();
         int notificationID = onGoingCallNotification.getNotificationID();

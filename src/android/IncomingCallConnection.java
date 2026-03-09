@@ -15,15 +15,12 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 class IncomingCallConnection extends CallConnection {
     private final String callUUID;
     private final String payloadString;
-    private final String callerName;
     private IncomingCallNotification incomingCallNotification;
-    private Runnable mainActivityChangeListener;
 
-    IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName) {
-        super(service);
+    IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName, String sessionId) {
+        super(service, callerName, sessionId);
         this.callUUID = callUUID;
         this.payloadString = payloadString;
-        this.callerName = callerName;
     }
 
     @Override
@@ -31,7 +28,7 @@ class IncomingCallConnection extends CallConnection {
         Log.d(MyConnectionService.TAG, "onShowIncomingCallUi() invoked, for call_uuid: " + callUUID);
         this.setRinging();
 
-        this.incomingCallNotification = new IncomingCallNotification(payloadString, service.getApplicationContext());
+        this.incomingCallNotification = new IncomingCallNotification(payloadString, service.getApplicationContext(), this.sessionId);
         Notification notification = this.incomingCallNotification.build();
 
         NotificationManager notificationManager = (NotificationManager) service.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -53,16 +50,9 @@ class IncomingCallConnection extends CallConnection {
 
         cancelIncomingCallNotification();
 
-        this.setActive();
-        MyConnectionService.activeConnectionUUID = callUUID;
-
         service.showWebApp("answerCall", payloadString);
 
-        Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
-        Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
-        intent.putExtra("peerName", callerName);
-        service.startForegroundService(intent);
-
+        // Note: emitEvent() will enqueue events until the web app is ready + a listener is registered
         Log.d(MyConnectionService.TAG, "Emitting CordovaCall answer event...");
         CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
     }
@@ -91,16 +81,7 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onStateChanged(int state) {
-        Log.d(MyConnectionService.TAG, "connection onStateChanged: " + state);
-
         if (state == Connection.STATE_DISCONNECTED) {
-            MyConnectionService.connectionMap.remove(callUUID);
-            if (MyConnectionService.activeConnectionUUID != null && MyConnectionService.activeConnectionUUID.equals(callUUID)) {
-                MyConnectionService.activeConnectionUUID = null;
-            }
-            if (this.mainActivityChangeListener != null) {
-                CordovaCall.unregisterMainActivityStateChangeListener(this.mainActivityChangeListener);
-            }
             cancelIncomingCallNotification();
         }
 

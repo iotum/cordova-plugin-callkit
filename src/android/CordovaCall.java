@@ -59,7 +59,6 @@ public class CordovaCall extends CordovaPlugin {
     private CallbackContext callbackContext;
     private String appName;
     private String from;
-    private String to;
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
     static {
@@ -220,32 +219,54 @@ public class CordovaCall extends CordovaPlugin {
                     this.callbackContext.error("You can't make a call right now");
                 }
             } else {
-                to = args.getString(0);
-                this.sendCall();
+                String to = args.getString(0);
+                String sessionId = args.getString(2);
+                this.sendCall(to, sessionId);
             }
             return true;
         } else if (action.equals("connectCall")) {
-            Connection conn = MyConnectionService.getConnection();
-            if(conn == null) {
+            String sessionId = args.getString(0);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn == null) {
                 this.callbackContext.error("No call exists for you to connect");
-            } else if(conn.getState() == Connection.STATE_ACTIVE) {
+            } else if (conn.getState() == Connection.STATE_ACTIVE) {
                 this.callbackContext.error("Your call is already connected");
             } else {
                 conn.setActive();
-                AudioRouteMonitor.onCallConnected(); // Start monitoring if this is the first call
-                Intent intent = new Intent(this.cordova.getActivity().getApplicationContext(), this.cordova.getActivity().getClass());
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                this.cordova.getActivity().getApplicationContext().startActivity(intent);
                 this.callbackContext.success("Call connected successfully");
+            }            
+            return true;
+        } else if (action.equals("hold")) {
+            String sessionId = args.getString(0);
+            Log.d(TAG, "sessionId: " + sessionId);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn != null) {
+                conn.setOnHold();
+                this.callbackContext.success("Call put on hold");
+            } else {
+                Log.e(TAG, "Can not hold - no connection found for session ID");
+                this.callbackContext.error("No call found for session ID");
+            }
+            return true;
+        } else if (action.equals("unhold")) {
+            String sessionId = args.getString(0);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn != null) {
+                conn.setActive();
+                this.callbackContext.success("Call un-held");
+            } else {
+                Log.e(TAG, "Can not unhold - no connection found for session ID");
+                this.callbackContext.error("No call found for session Id");
             }
             return true;
         } else if (action.equals("endCall")) {
-            Connection conn = MyConnectionService.getConnection();
+            String sessionId = args.getString(0);
+            Connection conn = MyConnectionService.getConnection(sessionId);
             if(conn == null) {
-                this.callbackContext.error("No call exists for you to end");
+                this.callbackContext.error("No call with this sessionId exists for you to end");
             } else {
-                MyConnectionService.endActiveCall();
-                AudioRouteMonitor.onCallEnded(); // Stop monitoring if this is the last call
+                conn.onDisconnect();
+
                 ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
                 for (final CallbackContext cbContext : callbackContexts) {
                     cordova.getThreadPool().execute(new Runnable() {
@@ -382,7 +403,7 @@ public class CordovaCall extends CordovaPlugin {
         this.tm.showInCallScreen(false);
     }
 
-    private void sendCall() {
+    private void sendCall(String to, String sessionId) {
         // Your client web app should have already checked/requested READ_PHONE_NUMBERS before hand
         if (!CordovaCall.getCordova().hasPermission(Manifest.permission.READ_PHONE_NUMBERS)) {
             this.callbackContext.error("READ_PHONE_NUMBER_PERMISSION not granted, cant proceed with placing a call");
@@ -391,7 +412,8 @@ public class CordovaCall extends CordovaPlugin {
 
         Uri uri = Uri.fromParts("tel", to, null);
         Bundle callInfoBundle = new Bundle();
-        callInfoBundle.putString("to",to);
+        callInfoBundle.putString("to", to);
+        callInfoBundle.putString("sessionId", sessionId);
         Bundle callInfo = new Bundle();
         callInfo.putParcelable(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS,callInfoBundle);
 

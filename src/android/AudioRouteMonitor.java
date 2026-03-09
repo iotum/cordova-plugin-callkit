@@ -33,7 +33,6 @@ public class AudioRouteMonitor {
     private final AudioManager audioManager;
     private BroadcastReceiver audioRouteReceiver;
 
-    private static int activeCallCount = 0;
     private static AudioRouteMonitor instance;
 
     public AudioRouteMonitor(CordovaInterface cordova, AudioManager audioManager) {
@@ -54,9 +53,9 @@ public class AudioRouteMonitor {
      * Starts monitoring on the first active call.
      */
     public static void onCallConnected() {
-        activeCallCount++;
-        Log.d(TAG, "Active call count incremented to: " + activeCallCount);
-        if (activeCallCount == 1 && instance != null) {
+        int count = MyConnectionService.getActiveCallCount();
+        Log.d(TAG, "onCallConnected, active call count: " + count);
+        if (count == 1 && instance != null) {
             instance.startMonitoring();
         }
     }
@@ -66,14 +65,10 @@ public class AudioRouteMonitor {
      * Stops monitoring when the last active call ends.
      */
     public static void onCallEnded() {
-        if (activeCallCount > 0) {
-            activeCallCount--;
-            Log.d(TAG, "Active call count decremented to: " + activeCallCount);
-            if (activeCallCount == 0 && instance != null) {
-                instance.stopMonitoring();
-            }
-        } else {
-            Log.w(TAG, "Attempted to decrement active call count when already 0");
+        int count = MyConnectionService.getActiveCallCount();
+        Log.d(TAG, "onCallEnded, active call count: " + count);
+        if (count == 0 && instance != null) {
+            instance.stopMonitoring();
         }
     }
 
