@@ -68,7 +68,12 @@ public class MyConnectionService extends ConnectionService {
             }
 
             String callUUID = payload.optString("call_uuid", "");
-            String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(callUUID));
+            String sessionId = null;
+            try {
+                sessionId = payload.getString("session_id");
+            } catch (JSONException e) {
+                throw new RuntimeException("Unable to add incoming connection - no session_id found in payload");
+            }
 
             if (payload.optBoolean("dismiss", false)) {
                 Log.d(TAG, "received intent with payload.dismiss indicating call is dismissed, call_uuid: " + callUUID);
@@ -122,19 +127,6 @@ public class MyConnectionService extends ConnectionService {
         }
 
         return START_STICKY; // System will attempt to re-create the service if it is killed.
-    }
-
-    public static Connection getConnectionByPayload(String pushMessagePayload) {
-        JSONObject payload;
-        try {
-            payload = new JSONObject(pushMessagePayload);
-        } catch (JSONException e) {
-            throw new RuntimeException("Failed to parse payload JSON string: " + e);
-        }
-
-        String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(payload.optString("call_uuid")));
-
-        return connectionMap.get(sessionId);
     }
 
     public void showWebApp(String userAction, String payload) {

@@ -8,7 +8,6 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.util.Log;
@@ -40,27 +39,10 @@ public class IncomingCallActivity extends AppCompatActivity {
             String action = intent.getAction();
             Log.d(TAG, "callStateReciever onReceive: " + action);
             if ("connection_state_changed".equals(action)) {
-                String payload = getPushMessagePayload();
-                JSONObject payloadJSON;
-                try {
-                    payloadJSON = new JSONObject(payload);
-                } catch (JSONException e) {
-                    throw new RuntimeException("callStateReciever: unable to parse payload json: " + e);
-                }
-
-                String callUUID;
-                try {
-                    callUUID = payloadJSON.getString("call_uuid");
-                } catch (JSONException e) {
-                    throw new RuntimeException("callStateReceive: unable to get call_uuid from payload json");
-                }
-
-                if (callUUID.equals(intent.getStringExtra("call_uuid"))) {
-                    int newState = intent.getIntExtra("state", 0);
-                    if (newState == Connection.STATE_DISCONNECTED) {
-                        Log.d(TAG, "closing activity as call was disconnected");
-                        finishAndRemoveTask();
-                    }
+                Connection conn = MyConnectionService.getConnection(intent.getStringExtra("sessionId"));
+                if (conn.getState() == Connection.STATE_DISCONNECTED) {
+                    Log.d(TAG, "closing activity as call was disconnected");
+                    finishAndRemoveTask();
                 }
             }
         }
@@ -75,7 +57,10 @@ public class IncomingCallActivity extends AppCompatActivity {
         Log.d(TAG, "Registering callStateReciever");
         LocalBroadcastManager.getInstance(this.getApplicationContext()).registerReceiver(callStateReceiver, filter);
 
-        Connection connection = MyConnectionService.getConnectionByPayload(this.getPushMessagePayload());
+        String sessionId = this.getIntent().getStringExtra("sessionId");
+
+        Connection connection = MyConnectionService.getConnection(sessionId);
+
         if (connection == null) {
             Log.d(TAG, "Exiting, connection no longer exists.");
             finishAndRemoveTask();

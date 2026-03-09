@@ -5,12 +5,9 @@ import org.apache.cordova.PluginResult;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
-import android.content.Intent;
 import android.telecom.Connection;
 import android.telecom.DisconnectCause;
 import android.util.Log;
-
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 class IncomingCallConnection extends CallConnection {
     private final String callUUID;
@@ -86,11 +83,5 @@ class IncomingCallConnection extends CallConnection {
         }
 
         super.onStateChanged(state);
-
-        Log.d(MyConnectionService.TAG, "broadcasting connection_state_changed call_uuid: " + callUUID + " state: " + state);
-        Intent intent = new Intent("connection_state_changed");
-        intent.putExtra("call_uuid", callUUID);
-        intent.putExtra("state", state);
-        LocalBroadcastManager.getInstance(service.getApplicationContext()).sendBroadcast(intent);
     }
 }
