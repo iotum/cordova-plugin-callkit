@@ -173,6 +173,17 @@ public class MyConnectionService extends ConnectionService {
         return null;
     }
 
+    // Returns the number of connections currently in STATE_ACTIVE.
+    public static int getActiveCallCount() {
+        int count = 0;
+        for (Connection conn : connectionMap.values()) {
+            if (conn.getState() == Connection.STATE_ACTIVE) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public static Connection getConnection(String sessionId) {
         return connectionMap.get(sessionId);
     }
