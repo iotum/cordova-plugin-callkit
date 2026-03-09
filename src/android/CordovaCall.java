@@ -266,17 +266,6 @@ public class CordovaCall extends CordovaPlugin {
                 this.callbackContext.error("No call with this sessionId exists for you to end");
             } else {
                 conn.onDisconnect();
-
-                ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get("hangup");
-                for (final CallbackContext cbContext : callbackContexts) {
-                    cordova.getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, "hangup event called successfully");
-                            result.setKeepCallback(true);
-                            cbContext.sendPluginResult(result);
-                        }
-                    });
-                }
                 this.callbackContext.success("Call ended successfully");
             }
             return true;
