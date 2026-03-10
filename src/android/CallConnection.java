@@ -9,6 +9,8 @@ import android.telecom.Connection;
 import android.telecom.DisconnectCause;
 import android.util.Log;
 
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 /**
  * Base class for both incoming and outgoing connections.
  * Holds the common logic shared between IncomingCallConnection and OutgoingCallConnection.
@@ -67,5 +69,11 @@ class CallConnection extends Connection {
 
             MyConnectionService.onConnectionDisconnected(this.sessionId);
         }
+
+        Log.d(MyConnectionService.TAG, "broadcasting connection_state_changed sessionId: " + this.sessionId + " state: " + state);
+        Intent intent = new Intent("connection_state_changed");
+        intent.putExtra("sessionId", this.sessionId);
+        intent.putExtra("state", state);
+        LocalBroadcastManager.getInstance(service.getApplicationContext()).sendBroadcast(intent);
     }
 }

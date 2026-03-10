@@ -68,7 +68,12 @@ public class MyConnectionService extends ConnectionService {
             }
 
             String callUUID = payload.optString("call_uuid", "");
-            String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(callUUID));
+            String sessionId = null;
+            try {
+                sessionId = payload.getString("session_id");
+            } catch (JSONException e) {
+                throw new RuntimeException("Unable to add incoming connection - no session_id found in payload: " + payloadString);
+            }
 
             if (payload.optBoolean("dismiss", false)) {
                 Log.d(TAG, "received intent with payload.dismiss indicating call is dismissed, call_uuid: " + callUUID);
@@ -122,19 +127,6 @@ public class MyConnectionService extends ConnectionService {
         }
 
         return START_STICKY; // System will attempt to re-create the service if it is killed.
-    }
-
-    public static Connection getConnectionByPayload(String pushMessagePayload) {
-        JSONObject payload;
-        try {
-            payload = new JSONObject(pushMessagePayload);
-        } catch (JSONException e) {
-            throw new RuntimeException("Failed to parse payload JSON string: " + e);
-        }
-
-        String sessionId = payload.optString("session_id", getSessionIdFromCallUUID(payload.optString("call_uuid")));
-
-        return connectionMap.get(sessionId);
     }
 
     public void showWebApp(String userAction, String payload) {
@@ -228,7 +220,12 @@ public class MyConnectionService extends ConnectionService {
 
         connectionAddedMap.remove(callUUID);
 
-        String sessionId = getSessionIdFromCallUUID(callUUID);
+        String sessionId = null;
+        try {
+            sessionId = payload.getString("session_id");
+        } catch (JSONException e) {
+            throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
+        }
         final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
@@ -248,17 +245,6 @@ public class MyConnectionService extends ConnectionService {
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         return connection;
-    }
-
-    public static String getSessionIdFromCallUUID(String callUUID) {
-        String[] parts = callUUID.split(";");
-
-        if (parts.length >= 2) {
-            return parts[0] + parts[1];
-        } else {
-            Log.e(TAG, "can not extract sessionId from callUUID: " + callUUID);
-            return callUUID; // For robustness just use something
-        }
     }
 
     @Override

@@ -8,7 +8,6 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.telecom.Connection;
 import android.util.Log;
@@ -34,33 +33,18 @@ public class IncomingCallActivity extends AppCompatActivity {
 
     private int callerNameViewID;
 
+    private String sessionId; // sessionId of the ringing call associated with this acivity
+
     private final BroadcastReceiver callStateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            Log.d(TAG, "callStateReciever onReceive: " + action);
-            if ("connection_state_changed".equals(action)) {
-                String payload = getPushMessagePayload();
-                JSONObject payloadJSON;
-                try {
-                    payloadJSON = new JSONObject(payload);
-                } catch (JSONException e) {
-                    throw new RuntimeException("callStateReciever: unable to parse payload json: " + e);
-                }
-
-                String callUUID;
-                try {
-                    callUUID = payloadJSON.getString("call_uuid");
-                } catch (JSONException e) {
-                    throw new RuntimeException("callStateReceive: unable to get call_uuid from payload json");
-                }
-
-                if (callUUID.equals(intent.getStringExtra("call_uuid"))) {
-                    int newState = intent.getIntExtra("state", 0);
-                    if (newState == Connection.STATE_DISCONNECTED) {
-                        Log.d(TAG, "closing activity as call was disconnected");
-                        finishAndRemoveTask();
-                    }
+            Log.d(TAG, "callStateReceiver onReceive: " + action);
+            if ("connection_state_changed".equals(action) && sessionId.equals(intent.getStringExtra("sessionId"))) {
+                int newState = intent.getIntExtra("state", 0);
+                if (newState == Connection.STATE_DISCONNECTED) {
+                    Log.d(TAG, "closing activity as call was disconnected");
+                    finishAndRemoveTask();
                 }
             }
         }
@@ -70,12 +54,17 @@ public class IncomingCallActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        this.sessionId = this.getIntent().getStringExtra("sessionId");
+
         IntentFilter filter = new IntentFilter("connection_state_changed");
 
         Log.d(TAG, "Registering callStateReciever");
         LocalBroadcastManager.getInstance(this.getApplicationContext()).registerReceiver(callStateReceiver, filter);
 
-        Connection connection = MyConnectionService.getConnectionByPayload(this.getPushMessagePayload());
+
+
+        Connection connection = MyConnectionService.getConnection(sessionId);
+
         if (connection == null) {
             Log.d(TAG, "Exiting, connection no longer exists.");
             finishAndRemoveTask();
@@ -191,6 +180,8 @@ public class IncomingCallActivity extends AppCompatActivity {
     public void onNewIntent(@NonNull Intent intent, @NonNull ComponentCaller caller) {
         super.onNewIntent(intent, caller);
         this.setIntent(intent); // So that future calls to this.getIntent() return the new intent, and not the initial intent of the activity
+
+        this.sessionId = intent.getStringExtra("sessionId");
 
         this.updateCallerNameView();
     }
