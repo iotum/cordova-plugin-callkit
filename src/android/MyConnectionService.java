@@ -220,7 +220,12 @@ public class MyConnectionService extends ConnectionService {
 
         connectionAddedMap.remove(callUUID);
 
-        String sessionId = getSessionIdFromCallUUID(callUUID);
+        String sessionId = null;
+        try {
+            sessionId = payload.getString("session_id");
+        } catch (JSONException e) {
+            throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
+        }
         final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
 
         connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
@@ -240,17 +245,6 @@ public class MyConnectionService extends ConnectionService {
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         return connection;
-    }
-
-    public static String getSessionIdFromCallUUID(String callUUID) {
-        String[] parts = callUUID.split(";");
-
-        if (parts.length >= 2) {
-            return parts[0] + parts[1];
-        } else {
-            Log.e(TAG, "can not extract sessionId from callUUID: " + callUUID);
-            return callUUID; // For robustness just use something
-        }
     }
 
     @Override
