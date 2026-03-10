@@ -72,7 +72,7 @@ public class MyConnectionService extends ConnectionService {
             try {
                 sessionId = payload.getString("session_id");
             } catch (JSONException e) {
-                throw new RuntimeException("Unable to add incoming connection - no session_id found in payload");
+                throw new RuntimeException("Unable to add incoming connection - no session_id found in payload: " + payloadString);
             }
 
             if (payload.optBoolean("dismiss", false)) {
