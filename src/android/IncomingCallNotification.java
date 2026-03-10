@@ -95,6 +95,7 @@ public class IncomingCallNotification {
             builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePendingIntent, answerPendingIntent));
 
             Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
+            fullScreenIntent.putExtra("sessionId", this.sessionId);
             fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
             fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
