@@ -39,7 +39,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            Log.d(TAG, "callStateReciever onReceive: " + action);
+            Log.d(TAG, "callStateReceiver onReceive: " + action);
             if ("connection_state_changed".equals(action) && sessionId.equals(intent.getStringExtra("sessionId"))) {
                 int newState = intent.getIntExtra("state", 0);
                 if (newState == Connection.STATE_DISCONNECTED) {
