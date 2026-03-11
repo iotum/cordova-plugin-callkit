@@ -251,8 +251,8 @@ public class IncomingCallActivity extends AppCompatActivity {
         Log.d(TAG, "onDeclineClicked");
 
         Intent declineIntent = new Intent(this.getApplicationContext(), CallActionReceiver.class);
+        declineIntent.setAction("declineCall");
         declineIntent.putExtra("sessionId", this.sessionId);
-        declineIntent.putExtra("pushMessagePayload", this.getPushMessagePayload());
         declineIntent.putExtra("fromLockscreen", true);
         this.sendBroadcast(declineIntent);
 
