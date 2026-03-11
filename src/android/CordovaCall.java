@@ -61,17 +61,6 @@ public class CordovaCall extends CordovaPlugin {
     private String from;
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
-    static {
-        callbackContextMap.put("receiveCall", new ArrayList<CallbackContext>());
-        callbackContextMap.put("answer", new ArrayList<CallbackContext>());
-        callbackContextMap.put("reject", new ArrayList<CallbackContext>());
-        callbackContextMap.put("mute", new ArrayList<CallbackContext>());
-        callbackContextMap.put("unmute", new ArrayList<CallbackContext>());
-        callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
-        callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
-        callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
-        callbackContextMap.put("audioRouteChange", new ArrayList<CallbackContext>());
-    }
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
     private static CordovaWebView cordovaWebView;
@@ -87,7 +76,7 @@ public class CordovaCall extends CordovaPlugin {
 
     public static void emitEvent(String eventType, PluginResult result) {
         Log.d(TAG, "emitEvent: " + eventType + " result " + result.toString());
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().get(eventType);
+        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
         if (callbackContexts.size() == 0) {
             Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
             HashMap event = new HashMap();
@@ -272,7 +261,7 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("registerEvent")) {
             String eventType = args.getString(0);
             CallbackContext callbackContext1 = this.callbackContext;
-            ArrayList<CallbackContext> callbackContextList = callbackContextMap.get(eventType);
+            ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
             callbackContextList.add(callbackContext1);
             for (final HashMap event : enqueuedEvents) {
                 if (event.get("eventType").equals(eventType)) {
