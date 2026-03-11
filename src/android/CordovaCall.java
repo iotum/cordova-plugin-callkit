@@ -67,6 +67,8 @@ public class CordovaCall extends CordovaPlugin {
         callbackContextMap.put("reject", new ArrayList<CallbackContext>());
         callbackContextMap.put("mute", new ArrayList<CallbackContext>());
         callbackContextMap.put("unmute", new ArrayList<CallbackContext>());
+        callbackContextMap.put("hold", new ArrayList<CallbackContext>());
+        callbackContextMap.put("unhold", new ArrayList<CallbackContext>());
         callbackContextMap.put("hangup", new ArrayList<CallbackContext>());
         callbackContextMap.put("sendCall", new ArrayList<CallbackContext>());
         callbackContextMap.put("DTMF", new ArrayList<CallbackContext>());
