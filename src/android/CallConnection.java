@@ -48,15 +48,7 @@ class CallConnection extends Connection {
         super.onStateChanged(state);
         Log.d(MyConnectionService.TAG, "connection onStateChanged new state: " + Connection.stateToString(state));
 
-        if (state == Connection.STATE_RINGING || state == Connection.STATE_DIALING) {
-            // NOTE: CallAudioService should be started before mic access, in order to work.
-            // IMPORTANT: This preserves the ability to use the mic when the app is in the background!
-            Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
-            Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
-            intent.putExtra("peerName", peerName);
-            intent.putExtra("sessionId", this.sessionId);
-            service.startForegroundService(intent);
-        } else if (state == Connection.STATE_ACTIVE) {
+        if (state == Connection.STATE_ACTIVE) {
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
             this.destroy();
@@ -75,5 +67,16 @@ class CallConnection extends Connection {
         intent.putExtra("sessionId", this.sessionId);
         intent.putExtra("state", state);
         LocalBroadcastManager.getInstance(service.getApplicationContext()).sendBroadcast(intent);
+    }
+
+    protected void startCallAudioService() {
+        // NOTE: CallAudioService should be started before mic access, in order to work.
+        // IMPORTANT: This preserves the ability to use the mic when the app is in the background!
+        // IMPORTANT: RECORD_AUDIO permission must be granted beforehand! (since this service is flagged with: FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        Log.d(MyConnectionService.TAG, "Starting CallAudioService...");
+        Intent intent = new Intent(service.getApplicationContext(), CallAudioService.class);
+        intent.putExtra("peerName", peerName);
+        intent.putExtra("sessionId", this.sessionId);
+        service.startForegroundService(intent);
     }
 }
