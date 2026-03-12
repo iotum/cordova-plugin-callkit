@@ -78,7 +78,11 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onStateChanged(int state) {
-        if (state == Connection.STATE_DISCONNECTED) {
+        if (state == Connection.STATE_ACTIVE) {
+            // For an incoming call specifically, we wait for the connection to be ACTIVE as this would
+            // be after the facetalk web app has answered the call + RECORD_AUDIO permission is granted
+            this.startCallAudioService();
+        } else if (state == Connection.STATE_DISCONNECTED) {
             cancelIncomingCallNotification();
         }
 
