@@ -926,13 +926,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSUUID *callUUID = call[@"callUUID"];
     if (!callUUID) return nil;
 
-    NSArray<CXCall *> *calls = self.callController.callObserver.calls;
-    for (CXCall *call in calls) {
-        if ([call.UUID isEqual:callUUID]) {
-            return call;
-        }
-    }
-    return nil;
+    return [self callForUUID:callUUID];
 }
 
 // Maps the callkit internal callUUID with the facetalk sessionId
@@ -1249,11 +1243,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     // Do something if dismiss key is present and true
-    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == false) {
+    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == [NSNull null] || ![payloadDict[@"dismiss"] boolValue]) {
         [self logMessage:@"Dismiss key not found in payload or is false"];
         return;
     } else {
-        [self _dismissRingingCall:payloadDict[@"call_uuid"]];
+        [self _dismissRingingCall:payloadDict[@"session_id"]];
     }
 }
 
