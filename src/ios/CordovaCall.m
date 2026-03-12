@@ -1243,7 +1243,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     // Do something if dismiss key is present and true
-    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == false) {
+    if (payloadDict[@"dismiss"] == nil || payloadDict[@"dismiss"] == [NSNull null] || ![payloadDict[@"dismiss"] boolValue]) {
         [self logMessage:@"Dismiss key not found in payload or is false"];
         return;
     } else {
