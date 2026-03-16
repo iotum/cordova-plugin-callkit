@@ -649,7 +649,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if (call) {
         CXSetHeldCallAction *holdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:holdAction];
-        [self logMessage:[NSString stringWithFormat:@"Programatically Holding Call: %@", sessionId]];
+        [self logMessage:[NSString stringWithFormat:@"Programmatically Holding Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"onHold"] = @YES; // update this early so the callback does not emit back to facetalk
@@ -678,7 +678,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if (call) {
         CXSetHeldCallAction *unholdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unholdAction];
-        [self logMessage:[NSString stringWithFormat:@"Programatically Unholding Call: %@", sessionId]];
+        [self logMessage:[NSString stringWithFormat:@"Programmatically Unholding Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"onHold"] = @NO; // update this early so the callback does not emit back to facetalk
