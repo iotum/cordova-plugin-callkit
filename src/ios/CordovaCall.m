@@ -401,7 +401,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if (call) {
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
-        [self logMessage:[NSString stringWithFormat:@"Programatically Muting Call: %@", sessionId]];
+        [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"muted"] = @YES; // update this early so the callback does not emit back to facetalk
