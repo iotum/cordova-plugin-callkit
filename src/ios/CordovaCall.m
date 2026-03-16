@@ -822,6 +822,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     BOOL isMuted = action.muted;
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    if (!sessionId) {
+        [self logMessage:[NSString stringWithFormat:@"performSetMutedCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isMuted ? @"mute" : @"unmute"]];
+        [action fulfill];
+        return;
+    }
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@, sessionId: %@", isMuted ? @"mute" : @"unmute", [self.activeCalls[sessionId][@"muted"] boolValue] ? @"muted" : @"unmuted", sessionId]];
 
     // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
@@ -863,7 +868,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXCall *call = [self callForUUID:action.callUUID];
     BOOL isOnHold = action.onHold;
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
-
+    if (!sessionId) {
+        [self logMessage:[NSString stringWithFormat:@"performSetHeldCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isOnHold ? @"hold" : @"unhold"]];
+        [action fulfill];
+        return;
+    }
     // Ignore the duplicate hold/unhold events to prevent feedback loops
     if ([self.activeCalls[sessionId][@"onHold"] boolValue] == isOnHold) {
         [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isOnHold ? @"hold" : @"unhold"]];
