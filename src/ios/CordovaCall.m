@@ -867,7 +867,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     CXCall *call = [self callForUUID:action.callUUID];
     BOOL isOnHold = action.onHold;
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, we say: %@, callkit says: %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [self.activeCalls[sessionId][@"onHold"] boolValue] ? @"on hold" : @"not on hold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
     if (!sessionId) {
         [self logMessage:[NSString stringWithFormat:@"performSetHeldCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isOnHold ? @"hold" : @"unhold"]];
         [action fulfill];
