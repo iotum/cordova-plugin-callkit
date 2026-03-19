@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "WebSocketAdvanced.h"
 #import <SocketRocket/SocketRocket.h>
+#import <WebRTC/RTCAudioSession.h>
 
 @implementation CordovaCall
 
@@ -130,7 +131,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
       NSTimeInterval bufferDuration = .005;
       [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
       [sessionInstance setPreferredSampleRate:44100 error:nil];
-    //   [sessionInstance setActive:YES error:nil];
       [self logMessage:@"Configuring Audio"];
     }
     @catch (NSException *exception) {
@@ -736,12 +736,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"activated audio"];
+    [RTCAudioSession sharedInstance].isAudioEnabled = YES;
+    [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     monitorAudioRouteChange = YES;
 }
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"deactivated audio"];
+    [RTCAudioSession sharedInstance].isAudioEnabled = NO;
+    [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
+    monitorAudioRouteChange = NO;
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
