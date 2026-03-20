@@ -100,7 +100,6 @@
         <podspec>
             <pods use-frameworks="true">
                 <pod name="SocketRocket" spec="0.7.0" />
-                <pod name="GoogleWebRTC" />
             </pods>
         </podspec>
     </platform>
