@@ -739,6 +739,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     monitorAudioRouteChange = YES;
+
+    // Emit unhold callback deferred from performSetHeldCallAction
+    for (NSString *sessionId in self.activeCalls) {
+        NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
+        if (pendingHold != nil && [pendingHold boolValue] == NO) {
+            [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
+            for (id callbackId in callbackIds[@"unhold"]) {
+                NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                [pluginResult setKeepCallbackAsBool:YES];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+            }
+        }
+    }
 }
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
@@ -747,6 +761,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [RTCAudioSession sharedInstance].isAudioEnabled = NO;
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
+
+    // Emit hold callback deferred from performSetHeldCallAction
+    for (NSString *sessionId in self.activeCalls) {
+        NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
+        if (pendingHold != nil && [pendingHold boolValue] == YES) {
+            [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
+            for (id callbackId in callbackIds[@"hold"]) {
+                NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                [pluginResult setKeepCallbackAsBool:YES];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+            }
+        }
+    }
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
@@ -878,21 +906,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [action fulfill];
         return;
     }
-    // Ignore the duplicate hold/unhold events to prevent feedback loops
-    if ([self.activeCalls[sessionId][@"onHold"] boolValue] == isOnHold) {
-        [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isOnHold ? @"hold" : @"unhold"]];
-        [action fulfill];
-        return;
-    }
     self.activeCalls[sessionId][@"onHold"] = @(isOnHold); // Update the internal state with the new value
+    self.activeCalls[sessionId][@"pendingHoldEmit"] = @(isOnHold); // Callback emitted via didActivateAudioSession / didDeactivateAudioSession
     [action fulfill];
-    for (id callbackId in callbackIds[isOnHold?@"hold":@"unhold"]) {
-        CDVPluginResult* pluginResult = nil;
-        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isOnHold ? @"hold" : @"unhold"], @"sessionId": sessionId };
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-        [pluginResult setKeepCallbackAsBool:YES];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-    }
 }
 
 - (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
