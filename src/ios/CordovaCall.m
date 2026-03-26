@@ -38,8 +38,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXProviderConfiguration *providerConfiguration;
     appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
     providerConfiguration = [[CXProviderConfiguration alloc] initWithLocalizedName:appName];
-    providerConfiguration.maximumCallGroups = 1; // Max calls allowed to be handled at once as a group, including held calls
-    providerConfiguration.maximumCallsPerCallGroup = 1; // Max simultaneous active calls allowed
+    providerConfiguration.maximumCallGroups = 2; // Max calls allowed to be handled at once as a group, including held calls
+    providerConfiguration.maximumCallsPerCallGroup = 5; // Max simultaneous active calls allowed
     NSMutableSet *handleTypes = [[NSMutableSet alloc] init];
     [handleTypes addObject:@(CXHandleTypePhoneNumber)];
     providerConfiguration.supportedHandleTypes = handleTypes;
@@ -101,8 +101,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CXProviderConfiguration *providerConfiguration;
     providerConfiguration = [[CXProviderConfiguration alloc] initWithLocalizedName:appName];
-    providerConfiguration.maximumCallGroups = 1; // Max simultaneous active calls allowed
-    providerConfiguration.maximumCallsPerCallGroup = 1; // Max calls allowed to be handled at once as a group, including held calls
+    providerConfiguration.maximumCallGroups = 2; // Max simultaneous active calls allowed
+    providerConfiguration.maximumCallsPerCallGroup = 5; // Max calls allowed to be handled at once as a group, including held calls
     if(ringtone != nil) {
         providerConfiguration.ringtoneSound = ringtone;
     }
@@ -251,7 +251,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.localizedCallerName = callName;
         callUpdate.supportsGrouping = NO;
         callUpdate.supportsUngrouping = NO;
-        callUpdate.supportsHolding = NO;
+        callUpdate.supportsHolding = YES;
         callUpdate.supportsDTMF = enableDTMF;
         [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
             if(error == nil) {
@@ -323,7 +323,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.hasVideo = hasVideo;
         callUpdate.supportsGrouping = NO;
         callUpdate.supportsUngrouping = NO;
-        callUpdate.supportsHolding = NO;
+        callUpdate.supportsHolding = YES;
         callUpdate.supportsDTMF = enableDTMF;
         
         [self.provider reportCallWithUUID:call.UUID updated:callUpdate];
@@ -716,7 +716,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.localizedCallerName = action.contactIdentifier;
     callUpdate.supportsGrouping = NO;
     callUpdate.supportsUngrouping = NO;
-    callUpdate.supportsHolding = NO;
+    callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
 
     [self.provider reportCallWithUUID:action.callUUID updated:callUpdate];
