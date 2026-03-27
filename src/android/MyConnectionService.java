@@ -181,6 +181,17 @@ public class MyConnectionService extends ConnectionService {
         return connectionMap.get(sessionId);
     }
 
+    // Returns true if any connection in the map is currently STATE_ACTIVE or STATE_HOLDING.
+    public static boolean hasActiveOrHoldingConnections() {
+        for (Connection conn : connectionMap.values()) {
+            int state = conn.getState();
+            if (state == Connection.STATE_ACTIVE || state == Connection.STATE_HOLDING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void onConnectionDisconnected(String sessionId) {
         Log.d(TAG, "Removing CallConnection from connectionMap, sessionId: " + sessionId);
         connectionMap.remove(sessionId);
