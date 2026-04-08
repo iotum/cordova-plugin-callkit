@@ -172,6 +172,18 @@ public class MyConnectionService extends ConnectionService {
         return connectionMap.get(sessionId);
     }
 
+    // Returns true if any connection in the map is in a state that requires CallAudioService to remain running:
+    // STATE_DIALING (outgoing call started the service on DIALING), STATE_ACTIVE, or STATE_HOLDING.
+    public static boolean hasConnectionsRequiringAudioService() {
+        for (Connection conn : connectionMap.values()) {
+            int state = conn.getState();
+            if (state == Connection.STATE_DIALING || state == Connection.STATE_ACTIVE || state == Connection.STATE_HOLDING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void onConnectionDisconnected(String sessionId) {
         Log.d(TAG, "Removing CallConnection from connectionMap, sessionId: " + sessionId);
         connectionMap.remove(sessionId);
