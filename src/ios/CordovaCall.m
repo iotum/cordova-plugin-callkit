@@ -232,8 +232,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableDictionary *call = self.activeCalls[sessionId];
     if (!call) {
         self.activeCalls[sessionId] = [@{
-            @"callUUID": [[NSUUID alloc] init],
-            @"muted": @NO
+            @"callUUID": [[NSUUID alloc] init]
         } mutableCopy];
     }
     NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
@@ -281,8 +280,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString* sessionId = [command.arguments objectAtIndex:2];
     NSUUID *callUUID = [[NSUUID alloc] init];
     self.activeCalls[sessionId] = [@{
-        @"callUUID": callUUID,
-        @"muted": @NO
+        @"callUUID": callUUID
     } mutableCopy];
 
     if (hasId) {
@@ -402,13 +400,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: %@", sessionId]];
-        self.activeCalls[sessionId][@"muted"] = @YES; // update this early so the callback does not emit back to facetalk
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
                 [self logMessage:@"Error occurred muting Call"];
-                self.activeCalls[sessionId][@"muted"] = @NO; // Revert the muted state if the transaction failed
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -429,13 +425,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unmuting Call: %@", sessionId]];
-        self.activeCalls[sessionId][@"muted"] = @NO; // update this early so the callback does not emit back to facetalk
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
                 [self logMessage:@"Error occurred unmuting Call"];
-                self.activeCalls[sessionId][@"muted"] = @YES; // Revert the unmuted state if the transaction failed
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -650,14 +644,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetHeldCallAction *holdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:holdAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Holding Call: %@", sessionId]];
-        self.activeCalls[sessionId][@"onHold"] = @YES; // update this early so the callback does not emit back to facetalk
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
             } else {
                 [self logMessage:@"Error occurred holding Call"];
-                self.activeCalls[sessionId][@"onHold"] = @NO; // Revert the onHold state if the transaction failed
                 NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
             }
@@ -680,14 +672,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetHeldCallAction *unholdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unholdAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unholding Call: %@", sessionId]];
-        self.activeCalls[sessionId][@"onHold"] = @NO; // update this early so the callback does not emit back to facetalk
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
             } else {
                 [self logMessage:@"Error occurred unholding Call"];
-                self.activeCalls[sessionId][@"onHold"] = @YES; // Revert the onHold state if the transaction failed
                 NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
             }
@@ -860,15 +850,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [action fulfill];
         return;
     }
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, currently %@, sessionId: %@", isMuted ? @"mute" : @"unmute", [self.activeCalls[sessionId][@"muted"] boolValue] ? @"muted" : @"unmuted", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
 
-    // Ignore the duplicate mute/unmute events, somehow 2 events get sent for every action
-    if ([self.activeCalls[sessionId][@"muted"] boolValue] == isMuted) {
-        [self logMessage:[NSString stringWithFormat:@"Ignoring duplicate %@ event.", isMuted ? @"mute" : @"unmute"]];
-        [action fulfill];
-        return;
-    }
-    self.activeCalls[sessionId][@"muted"] = @(isMuted); // Update the internal state with the new value
     [action fulfill];
 
     for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
@@ -900,13 +883,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     CXCall *call = [self callForUUID:action.callUUID];
     BOOL isOnHold = action.onHold;
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, we say: %@, callkit says: %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [self.activeCalls[sessionId][@"onHold"] boolValue] ? @"on hold" : @"not on hold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, callkit says: %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
     if (!sessionId) {
         [self logMessage:[NSString stringWithFormat:@"performSetHeldCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isOnHold ? @"hold" : @"unhold"]];
         [action fulfill];
         return;
     }
-    self.activeCalls[sessionId][@"onHold"] = @(isOnHold); // Update the internal state with the new value
     self.activeCalls[sessionId][@"pendingHoldEmit"] = @(isOnHold); // Callback emitted via didActivateAudioSession / didDeactivateAudioSession
     [action fulfill];
 }
@@ -1221,8 +1203,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
     self.activeCalls[sessionId] = [@{
         @"callData": [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding],
-        @"callUUID": [[NSUUID alloc] init],
-        @"muted": @NO
+        @"callUUID": [[NSUUID alloc] init]
     } mutableCopy];
     // Notify Webhook that VOIP Push Has been received and app is started
     // NSURL *statusUpdateUrl = [NSURL URLWithString:[NSString stringWithFormat:@"%@?id=%@&input=%@", callBackUrl, callId, @"connected"]];
