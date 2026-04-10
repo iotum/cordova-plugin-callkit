@@ -311,6 +311,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"connectCall"];
     CDVPluginResult* pluginResult = nil;
     NSString* sessionId = [command.arguments objectAtIndex:0];
+    NSString* recentsSessionId = ([command.arguments count] > 1 && ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]])
+                                  ? [command.arguments objectAtIndex:1] : nil;
+
+    // If recentsSessionId provided, remap the activeCalls entry to the real sessionId
+    if (recentsSessionId && self.activeCalls[recentsSessionId]) {
+        self.activeCalls[sessionId] = self.activeCalls[recentsSessionId];
+        [self.activeCalls removeObjectForKey:recentsSessionId];
+    }
+
     CXCall *call = [self callForSessionId:sessionId];
 
     if(call && !call.hasConnected) {
@@ -524,6 +533,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString* callID = notification.object[@"callId"];
     NSString* callName = notification.object[@"callName"];
     NSUUID *callUUID = [[NSUUID alloc] init];
+    NSString *recentsSessionId = [NSString stringWithFormat:@"recents:%@", callID];
+    self.activeCalls[recentsSessionId] = [@{ @"callUUID": callUUID } mutableCopy];
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callID];
     CXStartCallAction *startCallAction = [[CXStartCallAction alloc] initWithCallUUID:callUUID handle:handle];
     startCallAction.video = [notification.object[@"isVideo"] boolValue]?YES:NO;
@@ -711,7 +722,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     [self.provider reportCallWithUUID:action.callUUID updated:callUpdate];
     [action fulfill];
-    NSDictionary *callData = @{@"callName":action.contactIdentifier, @"callId": action.handle.value, @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully"};
+    NSString *recentsSessionId = [NSString stringWithFormat:@"recents:%@", action.handle.value];
+    BOOL isRecentsCall = self.activeCalls[recentsSessionId] != nil;
+    NSDictionary *callData = @{@"callName":action.contactIdentifier, @"callId": action.handle.value, @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully", @"recentsSessionId": isRecentsCall ? recentsSessionId : [NSNull null]};
     for (id callbackId in callbackIds[@"sendCall"]) {
         CDVPluginResult* pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
