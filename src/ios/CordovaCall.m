@@ -936,6 +936,21 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     return NO;
 }
 
+// Reports a dummy incoming call with a random UUID and immediately ends it.
+// Must be called when a VoIP push is received but the payload is malformed,
+// because iOS 13+ will terminate the app if no call is reported.
+- (void)_reportAndEndDummyCall {
+    [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for malformed VoIP push"];
+    NSUUID *dummyUUID = [[NSUUID alloc] init];
+    CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"unknown"];
+    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+    callUpdate.remoteHandle = handle;
+    callUpdate.localizedCallerName = @"Unknown";
+    [self.provider reportNewIncomingCallWithUUID:dummyUUID update:callUpdate completion:^(NSError * _Nullable error) {
+        [self.provider reportCallWithUUID:dummyUUID endedAtDate:nil reason:CXCallEndedReasonFailed];
+    }];
+}
+
 // Returns the Callkit CXCall instance for a CallUUID
 - (CXCall *)callForUUID:(NSUUID *)callUUID {
     if (!callUUID) return nil;
@@ -1185,28 +1200,50 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)pushRegistry:(PKPushRegistry *)registry didReceiveIncomingPushWithPayload:(PKPushPayload *)payload forType:(PKPushType)type withCompletionHandler:(void (^)(void))completion
 {
     [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: %@", payload]];
-    NSDictionary *payloadDict = payload.dictionaryPayload[@"aps"];
-    [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPushWithPayload: %@", payloadDict]];
-
-    NSString *message = payloadDict[@"alert"];
-    [self logMessage:[NSString stringWithFormat:@"received VoIP message: %@", message]];
+    // apsDict and apsMessage seems to be unused
+    NSDictionary *apsDict = payload.dictionaryPayload[@"aps"] ?: @{};
+    NSString *apsMessage = apsDict[@"alert"] ?: @"";
 
     NSDictionary *data = payload.dictionaryPayload[@"data"];
     [self logMessage:[NSString stringWithFormat:@"received data: %@", data]];
 
+    // guard against empty, nil, or non-dictionary data payload
+    if (!data || ![data isKindOfClass:[NSDictionary class]] || data.count == 0) {
+        [self logMessage:@"didReceiveIncomingPush: data is empty, discarding as dummy call"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
+
+    NSString *payloadString = data[@"payload"];
+    if (!payloadString || payloadString.length == 0) {
+        [self logMessage:@"didReceiveIncomingPush: data has no payload key, discarding as dummy call"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
+
     NSMutableDictionary* results = [NSMutableDictionary dictionaryWithCapacity:2];
-    [results setObject:message forKey:@"function"];
+    [results setObject:apsMessage forKey:@"function"];
     [results setObject:@"" forKey:@"extra"];
 
     NSError *error = nil;
-    NSData *payloadJsonData = [[data objectForKey:@"payload"] dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *payloadJsonData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *payloadObj = [NSJSONSerialization JSONObjectWithData:payloadJsonData options:0 error:&error];
     if (error || ![payloadObj isKindOfClass:[NSDictionary class]]) {
         [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        [self _reportAndEndDummyCall];
+        completion();
         return;
     }
     // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
     NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
+    if (!sessionId || sessionId.length == 0) {
+        [self logMessage:@"didReceiveIncomingPush: no session_id or call_uuid (deprecated) in payload, discarding as dummy call"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
     NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
