@@ -1205,8 +1205,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: %@", payload]];
     // apsDict and apsMessage seems to be unused
-    NSDictionary *apsDict = payload.dictionaryPayload[@"aps"] ?: @{};
-    NSString *apsMessage = apsDict[@"alert"] ?: @"";
+    id apsValue = payload.dictionaryPayload[@"aps"];
+    NSDictionary *apsDict = [apsValue isKindOfClass:[NSDictionary class]] ? apsValue : @{};
+    id alertValue = apsDict[@"alert"];
+    NSString *apsMessage = [alertValue isKindOfClass:[NSString class]] ? alertValue : @"";
 
     NSDictionary *data = payload.dictionaryPayload[@"data"];
     [self logMessage:[NSString stringWithFormat:@"received data: %@", data]];
