@@ -1222,7 +1222,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     NSString *payloadString = data[@"payload"];
-    if (!payloadString || payloadString.length == 0) {
+    if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {
         [self logMessage:@"didReceiveIncomingPush: data has no payload key, discarding as dummy call"];
         [self _reportAndEndDummyCall];
         completion();
@@ -1243,14 +1243,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
-    NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
+    id sessionIdValue = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
+    NSString *sessionId = [sessionIdValue isKindOfClass:[NSString class]] ? sessionIdValue : nil;
     if (!sessionId || sessionId.length == 0) {
         [self logMessage:@"didReceiveIncomingPush: no session_id or call_uuid (deprecated) in payload, discarding as dummy call"];
         [self _reportAndEndDummyCall];
         completion();
         return;
     }
-    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
+    id fromValue = [payloadObj valueForKey:@"from"];
+    NSString *from = [fromValue isKindOfClass:[NSString class]] ? fromValue : @"Unknown";
+    NSArray* args = [NSArray arrayWithObjects:from, [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
     // Store URL and Call Id so they can be used for call Answer/Reject
