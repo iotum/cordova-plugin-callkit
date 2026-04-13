@@ -925,6 +925,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Internal method that can be called from within the plugin
+// iOS 13+ requires reportNewIncomingCallWithUUID before returning from a VoIP push, or the app is killed.
+// Call this when the push payload is malformed and we have nothing real to report.
+- (void)_reportAndEndDummyCall {
+    NSUUID *dummyUUID = [[NSUUID alloc] init];
+    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+    callUpdate.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"unknown"];
+    [self.provider reportNewIncomingCallWithUUID:dummyUUID update:callUpdate completion:^(NSError *reportError) {
+        [self.provider reportCallWithUUID:dummyUUID endedAtDate:nil reason:CXCallEndedReasonFailed];
+    }];
+}
+
 - (BOOL)_dismissRingingCall:(NSString *)sessionId {
     [self logMessage:@"_dismissRingingCall"];
 
@@ -1203,10 +1214,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSDictionary *payloadObj = [NSJSONSerialization JSONObjectWithData:payloadJsonData options:0 error:&error];
     if (error || ![payloadObj isKindOfClass:[NSDictionary class]]) {
         [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
+        [self _reportAndEndDummyCall];
+        completion();
         return;
     }
     // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
     NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
+    if (!sessionId) {
+        [self logMessage:@"didReceiveIncomingPush: payload missing session_id and call_uuid, ignoring"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
     NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
