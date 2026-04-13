@@ -925,17 +925,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Internal method that can be called from within the plugin
-// iOS 13+ requires reportNewIncomingCallWithUUID before returning from a VoIP push, or the app is killed.
-// Call this when the push payload is malformed and we have nothing real to report.
-- (void)_reportAndEndDummyCall {
-    NSUUID *dummyUUID = [[NSUUID alloc] init];
-    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
-    callUpdate.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"unknown"];
-    [self.provider reportNewIncomingCallWithUUID:dummyUUID update:callUpdate completion:^(NSError *reportError) {
-        [self.provider reportCallWithUUID:dummyUUID endedAtDate:nil reason:CXCallEndedReasonFailed];
-    }];
-}
-
 - (BOOL)_dismissRingingCall:(NSString *)sessionId {
     [self logMessage:@"_dismissRingingCall"];
 
@@ -1210,7 +1199,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [results setObject:@"" forKey:@"extra"];
 
     NSError *error = nil;
-    NSData *payloadJsonData = [[data objectForKey:@"payload"] dataUsingEncoding:NSUTF8StringEncoding];
+    NSString *payloadString = [data objectForKey:@"payload"];
+    if (![payloadString isKindOfClass:[NSString class]] || payloadString.length == 0) {
+        [self logMessage:@"didReceiveIncomingPush: missing or invalid payload string"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
+    NSData *payloadJsonData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *payloadObj = [NSJSONSerialization JSONObjectWithData:payloadJsonData options:0 error:&error];
     if (error || ![payloadObj isKindOfClass:[NSDictionary class]]) {
         [self logMessage:[NSString stringWithFormat:@"Error parsing payload JSON: %@", error]];
@@ -1220,8 +1216,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
     NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
-    if (!sessionId) {
-        [self logMessage:@"didReceiveIncomingPush: payload missing session_id and call_uuid, ignoring"];
+    if (sessionId == nil) {
+        [self logMessage:@"didReceiveIncomingPush: payload missing session_id and call_uuid, cannot process call"];
         [self _reportAndEndDummyCall];
         completion();
         return;
@@ -1299,6 +1295,21 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     } else {
         [self _dismissRingingCall:payloadDict[@"session_id"]];
     }
+}
+
+// iOS 13+ requires reportNewIncomingCallWithUUID: to be called on every VoIP push, even
+// when the payload is malformed. This helper reports a call and immediately ends it so
+// the OS does not penalise the app for ignoring the push.
+- (void)_reportAndEndDummyCall
+{
+    NSUUID *dummyUUID = [[NSUUID alloc] init];
+    CXCallUpdate *update = [[CXCallUpdate alloc] init];
+    update.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"unknown"];
+    update.localizedCallerName = @"Unknown";
+    [self.provider reportNewIncomingCallWithUUID:dummyUUID update:update completion:^(NSError *reportError) {
+        [self logMessage:[NSString stringWithFormat:@"_reportAndEndDummyCall: reported (error: %@)", reportError]];
+        [self.provider reportCallWithUUID:dummyUUID endedAtDate:nil reason:CXCallEndedReasonFailed];
+    }];
 }
 
 - (void)logMessage:(NSString *)message
