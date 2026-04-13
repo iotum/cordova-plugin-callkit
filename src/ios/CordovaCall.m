@@ -1214,20 +1214,24 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         completion();
         return;
     }
-    // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
-    NSString *sessionId = [payloadObj valueForKey:@"session_id"] ?: [payloadObj valueForKey:@"call_uuid"];
-    if (sessionId == nil) {
-        [self logMessage:@"didReceiveIncomingPush: payload missing session_id and call_uuid, cannot process call"];
+    // Validate all required string fields in the parsed payload
+    NSString *validationError = nil;
+    if (![self _validatePayload:payloadObj error:&validationError]) {
+        [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: invalid payload - %@", validationError]];
         [self _reportAndEndDummyCall];
         completion();
         return;
     }
-    NSArray* args = [NSArray arrayWithObjects:[payloadObj valueForKey:@"from"], [NSNull null], sessionId, nil];
+
+    // session_id param is the parsed call_uuid for NS PBX calls, it's session_id = callId + ftag, where call_uuid = callId;ftag;ttag
+    NSString *sessionId = payloadObj[@"session_id"] ?: payloadObj[@"call_uuid"];
+    NSString *fromId = payloadObj[@"from"];
+    NSArray* args = [NSArray arrayWithObjects:fromId ?: [NSNull null], [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
     // Store URL and Call Id so they can be used for call Answer/Reject
-    callBackUrl = [payloadObj valueForKey:@"callback_url"];
-    NSString *Type = [payloadObj valueForKey:@"type"];
+    callBackUrl = payloadObj[@"callback_url"];
+    NSString *Type = payloadObj[@"type"] ?: @"";
     hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
     self.activeCalls[sessionId] = [@{
         @"callData": [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding],
@@ -1295,6 +1299,42 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     } else {
         [self _dismissRingingCall:payloadDict[@"session_id"]];
     }
+}
+
+// Validates that all required fields in a parsed VoIP push payload are non-empty NSStrings.
+// Optional fields (type, callback_url, from) are allowed to be absent but must be NSString if present.
+// Returns NO and sets error to a description of the first invalid field found.
+- (BOOL)_validatePayload:(NSDictionary *)payload error:(NSString **)error
+{
+    // Required: at least one of session_id or call_uuid must be a non-empty NSString
+    NSArray *sessionKeys = @[@"session_id", @"call_uuid"];
+    BOOL hasSessionId = NO;
+    for (NSString *key in sessionKeys) {
+        id val = payload[key];
+        if (val != nil && val != [NSNull null]) {
+            if (![val isKindOfClass:[NSString class]] || [(NSString *)val length] == 0) {
+                if (error) *error = [NSString stringWithFormat:@"'%@' is not a non-empty string", key];
+                return NO;
+            }
+            hasSessionId = YES;
+        }
+    }
+    if (!hasSessionId) {
+        if (error) *error = @"missing session_id and call_uuid";
+        return NO;
+    }
+
+    // Optional string fields — must be NSString if present
+    NSArray *optionalStringKeys = @[@"from", @"type", @"callback_url"];
+    for (NSString *key in optionalStringKeys) {
+        id val = payload[key];
+        if (val != nil && val != [NSNull null] && ![val isKindOfClass:[NSString class]]) {
+            if (error) *error = [NSString stringWithFormat:@"'%@' is present but not a string", key];
+            return NO;
+        }
+    }
+
+    return YES;
 }
 
 // iOS 13+ requires reportNewIncomingCallWithUUID: to be called on every VoIP push, even
