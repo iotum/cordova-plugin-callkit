@@ -947,6 +947,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.remoteHandle = handle;
     callUpdate.localizedCallerName = @"Unknown";
     [self.provider reportNewIncomingCallWithUUID:dummyUUID update:callUpdate completion:^(NSError * _Nullable error) {
+        if (error != nil) {
+            [self logMessage:[NSString stringWithFormat:@"_reportAndEndDummyCall: failed to report dummy incoming call: %@", error.localizedDescription]];
+            return;
+        }
         [self.provider reportCallWithUUID:dummyUUID endedAtDate:nil reason:CXCallEndedReasonFailed];
     }];
 }
