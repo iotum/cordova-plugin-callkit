@@ -244,43 +244,50 @@ public class MyConnectionService extends ConnectionService {
         }
         final String callUUID = _callUUID;
 
-        String callerName = payload.optString("from", "UNKNOWN CALLER");
-
-        String sessionId = null;
+        // Ensure the connectionAddedMap entry is always removed once callUUID is known,
+        // even if an exception is thrown later in this method.
         try {
-            sessionId = payload.getString("session_id");
-        } catch (JSONException e) {
-            throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
-        }
-        final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
+            String callerName = payload.optString("from", "UNKNOWN CALLER");
 
-        connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
+            String sessionId = null;
+            try {
+                sessionId = payload.getString("session_id");
+            } catch (JSONException e) {
+                throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
+            }
+            final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
 
-        Icon icon = CordovaCall.getIcon();
-        if(icon != null) {
-            StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
-            connection.setStatusHints(statusHints);
-        }
+            connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
 
-        Log.d(TAG, "Created connection for callUUID: " + callUUID);
-        connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+            Icon icon = CordovaCall.getIcon();
+            if(icon != null) {
+                StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
+                connection.setStatusHints(statusHints);
+            }
 
-        Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
-        connectionMap.put(sessionId, connection);
-        // Remove after put so a dismiss arriving between addNewIncomingCall and connectionMap.put
-        // still finds a true entry in connectionAddedMap and is recorded as a pending dismissal.
-        connectionAddedMap.remove(callUUID);
+            Log.d(TAG, "Created connection for callUUID: " + callUUID);
+            connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
 
-        // If a dismiss was received before this connection was created, abort it immediately.
-        if (pendingDismissals.remove(sessionId) != null) {
-            Log.w(TAG, "Pending dismissal found for sessionId: " + sessionId + ", aborting connection immediately.");
-            connection.onAbort();
+            Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
+            connectionMap.put(sessionId, connection);
+
+            // If a dismiss was received before this connection was created, abort it immediately.
+            if (pendingDismissals.remove(sessionId) != null) {
+                Log.w(TAG, "Pending dismissal found for sessionId: " + sessionId + ", aborting connection immediately.");
+                connection.onAbort();
+                return connection;
+            }
+
+            CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
+
             return connection;
+        } finally {
+            // Deferred until after connectionMap.put so a dismiss arriving between addNewIncomingCall
+            // and connectionMap.put still finds the entry and is recorded as a pending dismissal.
+            // The finally block guarantees cleanup even if an exception is thrown, preventing the
+            // entry from leaking and blocking future calls for the same call_uuid.
+            connectionAddedMap.remove(callUUID);
         }
-
-        CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
-
-        return connection;
     }
 
     @Override
