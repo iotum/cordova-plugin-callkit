@@ -246,8 +246,6 @@ public class MyConnectionService extends ConnectionService {
 
         String callerName = payload.optString("from", "UNKNOWN CALLER");
 
-        connectionAddedMap.remove(callUUID);
-
         String sessionId = null;
         try {
             sessionId = payload.getString("session_id");
@@ -269,6 +267,9 @@ public class MyConnectionService extends ConnectionService {
 
         Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
         connectionMap.put(sessionId, connection);
+        // Remove after put so a dismiss arriving between addNewIncomingCall and connectionMap.put
+        // still finds a true entry in connectionAddedMap and is recorded as a pending dismissal.
+        connectionAddedMap.remove(callUUID);
 
         // If a dismiss was received before this connection was created, abort it immediately.
         if (pendingDismissals.remove(sessionId) != null) {
