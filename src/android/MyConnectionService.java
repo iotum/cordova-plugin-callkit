@@ -83,10 +83,20 @@ public class MyConnectionService extends ConnectionService {
 
                 Connection conn = connectionMap.get(sessionId);
                 if (conn == null) {
-                    // The connection has not been created yet (dismiss arrived before onCreateIncomingConnection).
-                    // Record a pending dismissal so the connection is aborted as soon as it is created.
-                    Log.w(TAG, "No connection found for dismiss, recording pending dismissal. call_uuid: " + callUUID + ", sessionId: " + sessionId);
-                    pendingDismissals.put(sessionId, true);
+                    if (Boolean.TRUE.equals(connectionAddedMap.get(callUUID))) {
+                        // A dismiss can legitimately arrive before onCreateIncomingConnection adds the
+                        // connection to connectionMap. Only record a pending dismissal when there is
+                        // separate evidence that an incoming call for this call_uuid is actually pending.
+                        Log.w(TAG, "No connection found for dismiss, recording pending dismissal. call_uuid: " + callUUID + ", sessionId: " + sessionId);
+                        pendingDismissals.put(sessionId, true);
+                    } else {
+                        // connectionMap can also be missing because the call already disconnected and
+                        // was removed, or because this is a duplicate/late dismiss push. Do not record
+                        // a pending dismissal in those cases, since that can leak entries and affect a
+                        // future call if sessionId is reused.
+                        Log.w(TAG, "No connection found for dismiss and no pending incoming call is tracked; ignoring dismiss. call_uuid: "
+                                + callUUID + ", sessionId: " + sessionId);
+                    }
                 } else {
                     int state = conn.getState();
                     if (state == Connection.STATE_DISCONNECTED) {
