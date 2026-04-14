@@ -28,6 +28,9 @@ public class MyConnectionService extends ConnectionService {
     static final String TAG = "MyConnectionService";
     static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are session id strings
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
+    // Tracks sessions for which a dismiss was received before the connection was added to connectionMap.
+    // When onCreateIncomingConnection fires for such a session, the connection is immediately aborted.
+    private static final ConcurrentHashMap<String, Boolean> pendingDismissals = new ConcurrentHashMap<String, Boolean>();
 
     private CallActionReceiver callActionReceiver;
 
@@ -80,12 +83,18 @@ public class MyConnectionService extends ConnectionService {
 
                 Connection conn = connectionMap.get(sessionId);
                 if (conn == null) {
-                    Log.e(TAG, "Cannot disconnect. No connection found with call_uuid: " + callUUID);
+                    // The connection has not been created yet (dismiss arrived before onCreateIncomingConnection).
+                    // Record a pending dismissal so the connection is aborted as soon as it is created.
+                    Log.w(TAG, "No connection found for dismiss, recording pending dismissal. call_uuid: " + callUUID + ", sessionId: " + sessionId);
+                    pendingDismissals.put(sessionId, true);
                 } else {
                     if (conn.getState() == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
-                    } else if (conn.getState() == Connection.STATE_RINGING) {
-                        Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, call_uuid: " + callUUID);
+                    } else {
+                        // Abort regardless of current state (STATE_NEW, STATE_RINGING, etc.) to avoid a
+                        // ghost connection being left in the Telecom framework and visible to Android Auto.
+                        Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, state: "
+                                + Connection.stateToString(conn.getState()) + ", call_uuid: " + callUUID);
                         conn.onAbort();
                     }
                 }
@@ -245,6 +254,13 @@ public class MyConnectionService extends ConnectionService {
         Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
         connectionMap.put(sessionId, connection);
 
+        // If a dismiss was received before this connection was created, abort it immediately.
+        if (pendingDismissals.remove(sessionId) != null) {
+            Log.w(TAG, "Pending dismissal found for sessionId: " + sessionId + ", aborting connection immediately.");
+            connection.onAbort();
+            return connection;
+        }
+
         CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
 
         return connection;
@@ -267,6 +283,10 @@ public class MyConnectionService extends ConnectionService {
             String callUUID = payload.getString("call_uuid");
             connectionAddedMap.remove(callUUID);
             Log.d(TAG, "Removed connectionAddedMap entry for failed incoming connection, callUUID: " + callUUID);
+            String sessionId = payload.optString("session_id", null);
+            if (sessionId != null) {
+                pendingDismissals.remove(sessionId);
+            }
         } catch (JSONException e) {
             Log.e(TAG, "onCreateIncomingConnectionFailed failed to parse payload: " + payloadString + ", error: " + e.getMessage());
         }
