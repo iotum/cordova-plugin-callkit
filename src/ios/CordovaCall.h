@@ -40,6 +40,8 @@
 - (void)callNumber:(CDVInvokedUrlCommand*)command;
 - (void)hold:(CDVInvokedUrlCommand*)command;
 - (void)unhold:(CDVInvokedUrlCommand*)command;
+- (void)group:(CDVInvokedUrlCommand*)command;
+- (void)ungroup:(CDVInvokedUrlCommand*)command;
 - (void)dismissRingingCall:(CDVInvokedUrlCommand*)command;
 - (void)keepAlive:(CDVInvokedUrlCommand*)command;
 - (void)stopKeepAlive:(CDVInvokedUrlCommand*)command;

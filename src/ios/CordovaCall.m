@@ -66,6 +66,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [callbackIds setObject:[NSMutableArray array] forKey:@"hold"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"unhold"];
     [callbackIds setObject:[NSMutableArray array] forKey:@"audioRouteChange"];
+    [callbackIds setObject:[NSMutableArray array] forKey:@"group"];
+    [callbackIds setObject:[NSMutableArray array] forKey:@"ungroup"];
 
     // Add call response (answer or reject) to pending if event listeners are not added at the time of responding
     pendingCallResponses = [NSMutableArray new];
@@ -248,8 +250,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.remoteHandle = handle;
         callUpdate.hasVideo = hasVideo;
         callUpdate.localizedCallerName = callName;
-        callUpdate.supportsGrouping = NO;
-        callUpdate.supportsUngrouping = NO;
+        callUpdate.supportsGrouping = YES;
+        callUpdate.supportsUngrouping = YES;
         callUpdate.supportsHolding = YES;
         callUpdate.supportsDTMF = enableDTMF;
         [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
@@ -328,8 +330,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
         CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
         callUpdate.hasVideo = hasVideo;
-        callUpdate.supportsGrouping = NO;
-        callUpdate.supportsUngrouping = NO;
+        callUpdate.supportsGrouping = YES;
+        callUpdate.supportsUngrouping = YES;
         callUpdate.supportsHolding = YES;
         callUpdate.supportsDTMF = enableDTMF;
         
@@ -645,6 +647,64 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
+- (void)group:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"programmatically grouping calls"];
+    __block CDVPluginResult* pluginResult = nil;
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    NSString* groupWithSessionId = [command.arguments objectAtIndex:1];
+    CXCall *call = [self callForSessionId:sessionId];
+    CXCall *callToGroupWith = [self callForSessionId:groupWithSessionId];
+    if (call && callToGroupWith) {
+        CXSetGroupCallAction *groupAction = [[CXSetGroupCallAction alloc] initWithCallUUID:call.UUID callUUIDToGroupWith:callToGroupWith.UUID];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:groupAction];
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                self.activeCalls[groupWithSessionId][@"onHold"] = @NO;
+                [self.activeCalls[groupWithSessionId] removeObjectForKey:@"pendingHoldEmit"];
+                NSDictionary *resultDict = @{ @"message": @"group event called successfully", @"sessionId": sessionId, @"groupedWithSessionId": groupWithSessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            } else {
+                [self logMessage:[NSString stringWithFormat:@"Error occurred grouping calls: %@", error.localizedDescription]];
+                NSDictionary *resultDict = @{ @"message": @"group event error", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
+    } else {
+        NSDictionary *resultDict = @{ @"message": @"no active calls to group", @"sessionId": sessionId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
+}
+
+- (void)ungroup:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"programmatically ungrouping call"];
+    __block CDVPluginResult* pluginResult = nil;
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    CXCall *call = [self callForSessionId:sessionId];
+    if (call) {
+        CXSetGroupCallAction *ungroupAction = [[CXSetGroupCallAction alloc] initWithCallUUID:call.UUID callUUIDToGroupWith:nil];
+        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:ungroupAction];
+        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+            if (error == nil) {
+                NSDictionary *resultDict = @{ @"message": @"ungroup event called successfully", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            } else {
+                [self logMessage:[NSString stringWithFormat:@"Error occurred ungrouping call: %@", error.localizedDescription]];
+                NSDictionary *resultDict = @{ @"message": @"ungroup event error", @"sessionId": sessionId };
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
+    } else {
+        NSDictionary *resultDict = @{ @"message": @"no active call to ungroup", @"sessionId": sessionId };
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
+}
+
 - (void)hold:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"facetalk initiated hold"];
@@ -715,8 +775,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.remoteHandle = action.handle;
     callUpdate.hasVideo = hasVideo;
     callUpdate.localizedCallerName = action.contactIdentifier;
-    callUpdate.supportsGrouping = NO;
-    callUpdate.supportsUngrouping = NO;
+    callUpdate.supportsGrouping = YES;
+    callUpdate.supportsUngrouping = YES;
     callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
 
@@ -904,6 +964,44 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     self.activeCalls[sessionId][@"pendingHoldEmit"] = @(isOnHold); // Callback emitted via didActivateAudioSession / didDeactivateAudioSession
     [action fulfill];
+}
+
+- (void)provider:(CXProvider *)provider performSetGroupCallAction:(CXSetGroupCallAction *)action
+{
+    NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    if (!sessionId) {
+        [self logMessage:[NSString stringWithFormat:@"performSetGroupCallAction: no sessionId found for callUUID %@", action.callUUID.UUIDString]];
+        [action fulfill];
+        return;
+    }
+
+    BOOL isGrouping = action.callUUIDToGroupWith != nil;
+    [self logMessage:[NSString stringWithFormat:@"performSetGroupCallAction: %@ event for sessionId: %@", isGrouping ? @"group" : @"ungroup", sessionId]];
+    [action fulfill];
+
+    if (isGrouping) {
+        NSString *groupedWithSessionId = [self sessionIdForUUID:action.callUUIDToGroupWith];
+        NSDictionary *resultDict = @{
+            @"message": @"group event called successfully",
+            @"sessionId": sessionId,
+            @"groupedWithSessionId": groupedWithSessionId ?: [NSNull null]
+        };
+        for (id callbackId in callbackIds[@"group"]) {
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        }
+    } else {
+        NSDictionary *resultDict = @{
+            @"message": @"ungroup event called successfully",
+            @"sessionId": sessionId
+        };
+        for (id callbackId in callbackIds[@"ungroup"]) {
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        }
+    }
 }
 
 - (void) dismissRingingCall:(CDVInvokedUrlCommand*)command
