@@ -51,7 +51,12 @@ class CallConnection extends Connection {
         if (state == Connection.STATE_ACTIVE) {
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
-            this.destroy();
+            // Do NOT call this.destroy() here. The ConnectionService framework's own onStateChanged
+            // listener fires after this override and sends setDisconnected() followed by removeCall()
+            // to the Telecom system server in the correct order.  Calling destroy() here sends
+            // removeCall() *before* setDisconnected() reaches Telecom, so Telecom removes the call
+            // while it still shows state=RINGING.  That stale RINGING state is exactly what Android
+            // Auto sees as a ghost call when it connects after the dismiss.
             AudioRouteMonitor.onCallEnded();
 
             if (!MyConnectionService.hasConnectionsRequiringAudioService()) {
