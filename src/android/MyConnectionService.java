@@ -88,14 +88,20 @@ public class MyConnectionService extends ConnectionService {
                     Log.w(TAG, "No connection found for dismiss, recording pending dismissal. call_uuid: " + callUUID + ", sessionId: " + sessionId);
                     pendingDismissals.put(sessionId, true);
                 } else {
-                    if (conn.getState() == Connection.STATE_DISCONNECTED) {
+                    int state = conn.getState();
+                    if (state == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
-                    } else {
-                        // Abort regardless of current state (STATE_NEW, STATE_RINGING, etc.) to avoid a
-                        // ghost connection being left in the Telecom framework and visible to Android Auto.
+                    } else if (state == Connection.STATE_NEW || state == Connection.STATE_RINGING) {
+                        // Only abort pre-answer states. STATE_NEW covers the brief window between
+                        // onCreateIncomingConnection returning and onShowIncomingCallUi calling
+                        // setRinging(). Do not abort STATE_ACTIVE or STATE_HOLDING — a late-arriving
+                        // dismiss for an already-answered call must not disconnect the live call.
                         Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, state: "
-                                + Connection.stateToString(conn.getState()) + ", call_uuid: " + callUUID);
+                                + Connection.stateToString(state) + ", call_uuid: " + callUUID);
                         conn.onAbort();
+                    } else {
+                        Log.d(TAG, "Ignoring dismiss for connection in non-ringing state: "
+                                + Connection.stateToString(state) + ", call_uuid: " + callUUID);
                     }
                 }
             } else {
