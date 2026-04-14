@@ -35,11 +35,17 @@ class CallConnection extends Connection {
     @Override
     public void onAbort() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+        // destroy() is called after setDisconnected() so the ConnectionService framework's own
+        // listener can send setDisconnected → removeCall to Telecom in the correct order first.
+        this.destroy();
     }
 
     @Override
     public void onDisconnect() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+        // destroy() is called after setDisconnected() so the ConnectionService framework's own
+        // listener can send setDisconnected → removeCall to Telecom in the correct order first.
+        this.destroy();
         CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
     }
 
@@ -51,12 +57,6 @@ class CallConnection extends Connection {
         if (state == Connection.STATE_ACTIVE) {
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
-            // Do NOT call this.destroy() here. The ConnectionService framework's own onStateChanged
-            // listener fires after this override and sends setDisconnected() followed by removeCall()
-            // to the Telecom system server in the correct order.  Calling destroy() here sends
-            // removeCall() *before* setDisconnected() reaches Telecom, so Telecom removes the call
-            // while it still shows state=RINGING.  That stale RINGING state is exactly what Android
-            // Auto sees as a ghost call when it connects after the dismiss.
             AudioRouteMonitor.onCallEnded();
 
             if (!MyConnectionService.hasConnectionsRequiringAudioService()) {
