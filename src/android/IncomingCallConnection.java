@@ -58,6 +58,7 @@ class IncomingCallConnection extends CallConnection {
     public void onReject() {
         Log.d(MyConnectionService.TAG, "onReject, call_uuid: " + callUUID);
         this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
+        this.destroy();
 
         service.showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
 
