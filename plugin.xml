@@ -98,6 +98,7 @@
         <framework src="PushKit.framework" />
         <framework src="CallKit.framework" />
         <podspec>
+            <config></config>
             <pods use-frameworks="true">
                 <pod name="SocketRocket" spec="0.7.0" />
             </pods>
