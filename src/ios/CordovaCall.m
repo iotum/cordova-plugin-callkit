@@ -862,12 +862,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSUUID *expectedUUID = self.activeCalls[sessionId][@"pendingMuteActionUUID"];
     if (expectedUUID != nil) {
         // We submitted this transaction programmatically — only the action we created is valid.
+        // Always clear the pending UUID so future mute/unmute events are not blocked.
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteActionUUID"];
         if (![action.UUID isEqual:expectedUUID]) {
             [self logMessage:@"performSetMutedCallAction: discarding unexpected programmatic action"];
             [action fulfill];
             return;
         }
-        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteActionUUID"];
     } else {
         // No pending UUID: could be a CallKit UI action or a spurious internal action.
         // Discard if it doesn't change the current mute state.
