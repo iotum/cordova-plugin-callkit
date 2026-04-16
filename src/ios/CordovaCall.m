@@ -125,18 +125,27 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)setupAudioSession
 {
     @try {
-      AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
-      [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord error:nil];
-      [sessionInstance setMode:AVAudioSessionModeVoiceChat error:nil];
-      NSTimeInterval bufferDuration = .005;
-      [sessionInstance setPreferredIOBufferDuration:bufferDuration error:nil];
-      [sessionInstance setPreferredSampleRate:44100 error:nil];
-      [self logMessage:@"Configuring Audio"];
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        NSError *categoryError = nil;
+        BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
+                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                                                              | AVAudioSessionCategoryOptionAllowBluetooth
+                                                              | AVAudioSessionCategoryOptionAllowAirPlay
+                                                              | AVAudioSessionCategoryOptionAllowBluetoothA2DP
+                                                         error:&categoryError];
+        if (!categoryConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to set audio session category: %@", categoryError]];
+        }
+
+        NSError *modeError = nil;
+        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeVoiceChat error:&modeError];
+        if (!modeConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
+        }
     }
     @catch (NSException *exception) {
-      [self logMessage:@"Unknown error returned from setupAudioSession"];
+        [self logMessage:@"Unknown error returned from setupAudioSession"];
     }
-    return;
 }
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command
@@ -325,15 +334,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if(call && !call.hasConnected) {
         [self.provider reportOutgoingCallWithUUID:call.UUID connectedAtDate:nil];
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
-
-        CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
-        callUpdate.hasVideo = hasVideo;
-        callUpdate.supportsGrouping = NO;
-        callUpdate.supportsUngrouping = NO;
-        callUpdate.supportsHolding = YES;
-        callUpdate.supportsDTMF = enableDTMF;
-        
-        [self.provider reportCallWithUUID:call.UUID updated:callUpdate];
     } else {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
     }
@@ -411,6 +411,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
+                self.activeCalls[sessionId][@"pendingMuteActionUUID"] = muteAction.UUID;
+                self.activeCalls[sessionId][@"isMuted"] = @YES;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
             } else {
                 [self logMessage:@"Error occurred muting Call"];
@@ -436,6 +438,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unmuting Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
+                self.activeCalls[sessionId][@"pendingMuteActionUUID"] = unmuteAction.UUID;
+                self.activeCalls[sessionId][@"isMuted"] = @NO;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
             } else {
                 [self logMessage:@"Error occurred unmuting Call"];
@@ -864,6 +868,28 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
+    NSUUID *expectedUUID = self.activeCalls[sessionId][@"pendingMuteActionUUID"];
+    if (expectedUUID != nil) {
+        // We submitted this transaction programmatically — only the action we created is valid.
+        // Always clear the pending UUID so future mute/unmute events are not blocked.
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteActionUUID"];
+        if (![action.UUID isEqual:expectedUUID]) {
+            [self logMessage:@"performSetMutedCallAction: discarding unexpected programmatic action"];
+            [action fulfill];
+            return;
+        }
+    } else {
+        // No pending UUID: could be a CallKit UI action or a spurious internal action.
+        // Discard if it doesn't change the current mute state.
+        NSNumber *currentMuted = self.activeCalls[sessionId][@"isMuted"];
+        if (currentMuted != nil && [currentMuted boolValue] == isMuted) {
+            [self logMessage:[NSString stringWithFormat:@"performSetMutedCallAction: discarding no-op action (already isMuted=%d)", isMuted]];
+            [action fulfill];
+            return;
+        }
+    }
+    // Sync our isMuted state to match what CallKit just told us.
+    self.activeCalls[sessionId][@"isMuted"] = @(isMuted);
 
     [action fulfill];
 
