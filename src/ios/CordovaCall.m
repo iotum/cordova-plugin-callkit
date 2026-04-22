@@ -94,10 +94,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     webSockets = [[NSMutableDictionary alloc] init];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleRemotePushNotification:) name:@"CallkitHandleRemotePushNotification" object:nil];
-
-    // Inject WKUIDelegate media-capture permission grant so getUserMedia in WKWebView
-    // does not prompt the user on every session (iOS 15+).
-    [self _injectMediaCapturePermissionDelegate];
 }
 
 // CallKit - Interface
@@ -142,8 +138,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
     }
 
-    // Reflect the default routing: VideoChat routes to speaker, VoiceChat routes to earpiece.
-    // Only set the default if the user hasn't explicitly overridden it yet (i.e., session is not active).
     if (!monitorAudioRouteChange) {
         isSpeakerOn = hasVideo;
     }
@@ -777,6 +771,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"activated audio"];
+    // Re-apply category and mode now that CallKit owns the session.
+    // WKWebView's WebRTC audio unit reads session config at activation time,
+    // so settings applied earlier in performAnswerCallAction may have been reset.
+    [self setupAudioSession];
     monitorAudioRouteChange = YES;
 
     // Apply speaker override for video calls (isSpeakerOn = YES set in setupAudioSession)
@@ -785,10 +783,29 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [audioSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
     }
 
+    // Emit answer callback deferred from performAnswerCallAction
+    for (NSString *sessionId in self.activeCalls) {
+        NSNumber *pendingAnswer = self.activeCalls[sessionId][@"pendingAnswerEmit"];
+        if (pendingAnswer != nil && [pendingAnswer boolValue] == YES) {
+            [self logMessage:[NSString stringWithFormat:@"didActivateAudioSession: emitting deferred answer for sessionId=%@", sessionId]];
+            [self.activeCalls[sessionId] removeObjectForKey:@"pendingAnswerEmit"];
+            if ([callbackIds[@"answer"] count] == 0) {
+                NSDictionary *pendingResponse = @{
+                    @"type": PENDING_RESPONSE_ANSWER,
+                    @"sessionId": sessionId
+                };
+                [pendingCallResponses addObject:pendingResponse];
+            } else {
+                [self triggerCordovaEventForCallResponse:@"answer" sessionId:sessionId];
+            }
+        }
+    }
+
     // Emit unhold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == NO) {
+            [self logMessage:[NSString stringWithFormat:@"didActivateAudioSession: emitting deferred unhold for sessionId=%@", sessionId]];
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
             for (id callbackId in callbackIds[@"unhold"]) {
                 NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
@@ -805,17 +822,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"deactivated audio"];
     monitorAudioRouteChange = NO;
 
-    // Restore to a passive category on call end (not hold) so any post-call audio
-    // (tones, notifications) plays through a deterministic route and doesn't double-play.
-    if (self.activeCalls.count == 0) {
-        [self logMessage:@"No active calls, resetting audio session to passive category"];
-        [audioSession setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:nil];
-    }
-
     // Emit hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == YES) {
+            [self logMessage:[NSString stringWithFormat:@"didDeactivateAudioSession: emitting deferred hold for sessionId=%@", sessionId]];
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
             for (id callbackId in callbackIds[@"hold"]) {
                 NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
@@ -834,16 +845,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [action fulfill];
 
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
-    if ([callbackIds[@"answer"] count] == 0) {
-        // callbackId for event not registered, add to pending to trigger on registration
-        NSDictionary *pendingResponse = @{
-            @"type": PENDING_RESPONSE_ANSWER,
-            @"sessionId": sessionId
-        };
-        [pendingCallResponses addObject:pendingResponse];
-    } else {
-        [self triggerCordovaEventForCallResponse:@"answer" sessionId:sessionId];
-    }
+    // Defer the answer callback until didActivateAudioSession so that JsSIP's gUM
+    // runs only after the audio session is fully active and owned by CallKit.
+    self.activeCalls[sessionId][@"pendingAnswerEmit"] = @YES;
 
     UIApplication *app = [UIApplication sharedApplication];
     bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
@@ -1400,52 +1404,5 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)logMessage:(NSString *)message
 {
     NSLog(@"[CordovaCall]: %@", message);
-}
-
-// Takes over as WKWebView UIDelegate and chains the original delegate so Cordova's
-// own UIDelegate methods (alert, confirm, etc.) are not lost.
-- (void)_injectMediaCapturePermissionDelegate {
-    if (@available(iOS 15.0, *)) {
-        if ([self.webView isKindOfClass:[WKWebView class]]) {
-            WKWebView *wkWebView = (WKWebView *)self.webView;
-            self.originalUIDelegate = wkWebView.UIDelegate;
-            wkWebView.UIDelegate = self;
-        }
-    }
-}
-
-// Grants WKWebView-level microphone access based on the OS-level AVCaptureDevice
-// authorization status, so JsSIP's getUserMedia does not show a per-session prompt.
-// - Already authorized at OS level → grant immediately.
-// - Not yet determined → trigger the OS prompt, then reflect the user's choice.
-// - Denied/restricted → deny so WebRTC fails gracefully.
-- (void)webView:(WKWebView *)wkWebView
-    requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin
-    initiatedByFrame:(WKFrameInfo *)frame
-    type:(WKMediaCaptureType)type
-    decisionHandler:(void (^)(WKPermissionDecision))decisionHandler
-    API_AVAILABLE(ios(15.0))
-{
-    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-    if (status == AVAuthorizationStatusAuthorized) {
-        decisionHandler(WKPermissionDecisionGrant);
-    } else if (status == AVAuthorizationStatusNotDetermined) {
-        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                decisionHandler(granted ? WKPermissionDecisionGrant : WKPermissionDecisionDeny);
-            });
-        }];
-    } else {
-        decisionHandler(WKPermissionDecisionDeny);
-    }
-}
-
-// Forward all other WKUIDelegate messages (e.g. JS alert/confirm/prompt panels)
-// to Cordova's original UIDelegate so nothing is lost.
-- (id)forwardingTargetForSelector:(SEL)aSelector {
-    if ([self.originalUIDelegate respondsToSelector:aSelector]) {
-        return self.originalUIDelegate;
-    }
-    return [super forwardingTargetForSelector:aSelector];
 }
 @end
