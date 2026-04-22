@@ -501,6 +501,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     @try {
+        // If a call exists but the audio session hasn't been activated yet (window between
+        // performAnswerCallAction and didActivateAudioSession), the hardware route still reflects
+        // the pre-call state (e.g. .playback → speaker) and is unreliable.
+        // Fall back to isSpeakerOn which was correctly set in setupAudioSession.
+        if (self.activeCalls.count > 0 && !monitorAudioRouteChange) {
+            NSString* inferredRoute = isSpeakerOn ? @"speaker" : @"earpiece";
+            [self logMessage:[NSString stringWithFormat:@"getAudioRoute: session not yet active, inferring from isSpeakerOn=%d -> %@", isSpeakerOn, inferredRoute]];
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:inferredRoute];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+            return;
+        }
+
         AVAudioSessionRouteDescription* currentRoute = [[RTCAudioSession sharedInstance] currentRoute];
 
         NSString* currentOutputType = @"Unknown";
