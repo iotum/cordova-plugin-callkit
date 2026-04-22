@@ -17,6 +17,7 @@ BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
 BOOL monitorAudioRouteChange = NO;
+BOOL isSpeakerOn = NO;
 BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
@@ -97,54 +98,30 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // CallKit - Interface
-- (void)updateProviderConfig
-{
-    CXProviderConfiguration *providerConfiguration;
-    providerConfiguration = [[CXProviderConfiguration alloc] initWithLocalizedName:appName];
-    providerConfiguration.maximumCallGroups = 2; // Max simultaneous active calls allowed
-    providerConfiguration.maximumCallsPerCallGroup = 5; // Max calls allowed to be handled at once as a group, including held calls
-    if(ringtone != nil) {
-        providerConfiguration.ringtoneSound = ringtone;
-    }
-    if(icon != nil) {
-        UIImage *iconImage = [UIImage imageNamed:icon];
-        NSData *iconData = UIImagePNGRepresentation(iconImage);
-        providerConfiguration.iconTemplateImageData = iconData;
-    }
-    NSMutableSet *handleTypes = [[NSMutableSet alloc] init];
-    [handleTypes addObject:@(CXHandleTypePhoneNumber)];
-    providerConfiguration.supportedHandleTypes = handleTypes;
-    providerConfiguration.supportsVideo = hasVideo;
-    if (@available(iOS 11.0, *)) {
-        providerConfiguration.includesCallsInRecents = includeInRecents;
-    }
-
-    self.provider.configuration = providerConfiguration;
-}
-
 - (void)setupAudioSession
 {
+    RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
+    [rtcSession lockForConfiguration];
     @try {
-        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
         NSError *categoryError = nil;
-        BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
-                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                                                              | AVAudioSessionCategoryOptionAllowBluetooth
-                                                              | AVAudioSessionCategoryOptionAllowAirPlay
-                                                              | AVAudioSessionCategoryOptionAllowBluetoothA2DP
-                                                         error:&categoryError];
+        BOOL categoryConfigured = [rtcSession setCategory:AVAudioSessionCategoryPlayAndRecord
+                                              withOptions:AVAudioSessionCategoryOptionAllowBluetoothHFP
+                                                   error:&categoryError];
         if (!categoryConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session category: %@", categoryError]];
         }
 
         NSError *modeError = nil;
-        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeVoiceChat error:&modeError];
+        BOOL modeConfigured = [rtcSession setMode:hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
         }
     }
     @catch (NSException *exception) {
         [self logMessage:@"Unknown error returned from setupAudioSession"];
+    }
+    @finally {
+        [rtcSession unlockForConfiguration];
     }
 }
 
@@ -155,7 +132,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     if (proposedAppName != nil && [proposedAppName length] > 0) {
         appName = proposedAppName;
-        [self updateProviderConfig];
+        CXProviderConfiguration *existing = self.provider.configuration;
+        CXProviderConfiguration *config = [[CXProviderConfiguration alloc] initWithLocalizedName:appName];
+        config.maximumCallGroups = existing.maximumCallGroups;
+        config.maximumCallsPerCallGroup = existing.maximumCallsPerCallGroup;
+        config.ringtoneSound = existing.ringtoneSound;
+        config.iconTemplateImageData = existing.iconTemplateImageData;
+        config.supportedHandleTypes = existing.supportedHandleTypes;
+        config.supportsVideo = existing.supportsVideo;
+        if (@available(iOS 11.0, *)) {
+            config.includesCallsInRecents = existing.includesCallsInRecents;
+        }
+        self.provider.configuration = config;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"App Name Changed Successfully"];
     } else {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"App Name Can't Be Empty"];
@@ -175,7 +163,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"This icon does not exist. Make sure to add it to your project the right way."];
     } else {
         icon = proposedIconName;
-        [self updateProviderConfig];
+        CXProviderConfiguration *config = self.provider.configuration;
+        config.iconTemplateImageData = UIImagePNGRepresentation([UIImage imageNamed:icon]);
+        self.provider.configuration = config;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Icon Changed Successfully"];
     }
 
@@ -191,7 +181,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Ringtone Name Can't Be Empty"];
     } else {
         ringtone = [NSString stringWithFormat: @"%@.caf", proposedRingtoneName];
-        [self updateProviderConfig];
+        CXProviderConfiguration *config = self.provider.configuration;
+        config.ringtoneSound = ringtone;
+        self.provider.configuration = config;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Ringtone Changed Successfully"];
     }
 
@@ -202,7 +194,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     includeInRecents = [[command.arguments objectAtIndex:0] boolValue];
-    [self updateProviderConfig];
+    if (@available(iOS 11.0, *)) {
+        CXProviderConfiguration *config = self.provider.configuration;
+        config.includesCallsInRecents = includeInRecents;
+        self.provider.configuration = config;
+    }
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"includeInRecents Changed Successfully"];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -219,7 +215,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     hasVideo = [[command.arguments objectAtIndex:0] boolValue];
-    [self updateProviderConfig];
+    CXProviderConfiguration *config = self.provider.configuration;
+    config.supportsVideo = hasVideo;
+    self.provider.configuration = config;
+    [self setupAudioSession];
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"hasVideo Changed Successfully"];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -456,12 +455,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
-    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+    RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
     [self logMessage:@"Programmatically turning speaker on"];
-    BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
+    [rtcSession lockForConfiguration];
+    NSError *error = nil;
+    BOOL success = [rtcSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:&error];
+    [rtcSession unlockForConfiguration];
     if(success) {
+      isSpeakerOn = YES;
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is on"];
     } else {
+      [self logMessage:[NSString stringWithFormat:@"speakerOn failed: %@", error]];
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -470,12 +474,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)speakerOff:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
-    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+    RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
     [self logMessage:@"Programmatically turning speaker off"];
-    BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:nil];
+    [rtcSession lockForConfiguration];
+    NSError *error = nil;
+    BOOL success = [rtcSession overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];
+    [rtcSession unlockForConfiguration];
     if(success) {
+      isSpeakerOn = NO;
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is off"];
     } else {
+      [self logMessage:[NSString stringWithFormat:@"speakerOff failed: %@", error]];
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -485,8 +494,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     @try {
-        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
-        AVAudioSessionRouteDescription* currentRoute = [sessionInstance currentRoute];
+        AVAudioSessionRouteDescription* currentRoute = [[RTCAudioSession sharedInstance] currentRoute];
 
         NSString* currentOutputType = @"Unknown";
         if([currentRoute.outputs count] > 0) {
@@ -564,7 +572,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
 
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[AVAudioSessionRouteChangePreviousRouteKey];
-        AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
+        AVAudioSessionRouteDescription* currentRoute = [[RTCAudioSession sharedInstance] currentRoute];
 
         // Get current output type
         NSString* currentOutputType = @"Unknown";
@@ -572,6 +580,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
         if([currentRoute.outputs count] > 0) {
             currentOutputType = [currentRoute.outputs[0] portType];
+        }
+
+        // Re-apply speaker override if user had speaker active and a device was unplugged
+        if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && isSpeakerOn &&
+            ![currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
+            RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
+            [rtcSession lockForConfiguration];
+            [rtcSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
+            [rtcSession unlockForConfiguration];
         }
 
         NSArray* outputs = [previousRouteKey outputs];
@@ -768,6 +785,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [RTCAudioSession sharedInstance].isAudioEnabled = NO;
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
+    isSpeakerOn = NO;
 
     // Emit hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
