@@ -226,7 +226,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CDVPluginResult* pluginResult = nil;
     hasVideo = [[command.arguments objectAtIndex:0] boolValue];
     [self updateProviderConfig];
-    [self setupAudioSession];
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"hasVideo Changed Successfully"];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -817,7 +816,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [RTCAudioSession sharedInstance].isAudioEnabled = NO;
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
-    isSpeakerOn = NO;
 
     // Restore to a passive category so any post-call audio (tones, notifications) plays
     // through a deterministic route and doesn't double-play across session transitions.
