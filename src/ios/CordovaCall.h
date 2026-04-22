@@ -17,6 +17,7 @@
 @property (nonatomic, strong) CXCallController *callController;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *activeCalls; // Stores each active call, mapped by call ID
 
+- (void)updateProviderConfig;
 - (void)setupAudioSession;
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command;
