@@ -817,12 +817,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
 
-    // Restore to a passive category so any post-call audio (tones, notifications) plays
-    // through a deterministic route and doesn't double-play across session transitions.
-    RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
-    [rtcSession lockForConfiguration];
-    [rtcSession setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:nil];
-    [rtcSession unlockForConfiguration];
+    // Restore to a passive category on call end (not hold) so any post-call audio
+    // (tones, notifications) plays through a deterministic route and doesn't double-play.
+    if (self.activeCalls.count == 0) {
+        RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
+        [rtcSession lockForConfiguration];
+        [rtcSession setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:nil];
+        [rtcSession unlockForConfiguration];
+    }
 
     // Emit hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
