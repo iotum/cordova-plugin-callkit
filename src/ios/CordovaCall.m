@@ -782,8 +782,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"activated audio"];
-    [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
+    [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     monitorAudioRouteChange = YES;
 
     // Apply speaker override for video calls (isSpeakerOn = YES set in setupAudioSession)
