@@ -95,6 +95,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     webSockets = [[NSMutableDictionary alloc] init];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleRemotePushNotification:) name:@"CallkitHandleRemotePushNotification" object:nil];
+
+    // Inject WKUIDelegate media-capture permission grant so getUserMedia in WKWebView
+    // does not prompt the user on every session (iOS 15+).
+    [self _injectMediaCapturePermissionDelegate];
 }
 
 // CallKit - Interface
@@ -1276,7 +1280,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
 }
 
-#define PushKit Delegate Methods
+#pragma mark - PushKit Delegate Methods
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type{
     if([credentials.token length] == 0) {
         [self logMessage:@"No device token!"];
@@ -1426,5 +1430,52 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)logMessage:(NSString *)message
 {
     NSLog(@"[CordovaCall]: %@", message);
+}
+
+// Takes over as WKWebView UIDelegate and chains the original delegate so Cordova's
+// own UIDelegate methods (alert, confirm, etc.) are not lost.
+- (void)_injectMediaCapturePermissionDelegate {
+    if (@available(iOS 15.0, *)) {
+        if ([self.webView isKindOfClass:[WKWebView class]]) {
+            WKWebView *wkWebView = (WKWebView *)self.webView;
+            self.originalUIDelegate = wkWebView.UIDelegate;
+            wkWebView.UIDelegate = self;
+        }
+    }
+}
+
+// Grants WKWebView-level microphone access based on the OS-level AVCaptureDevice
+// authorization status, so JsSIP's getUserMedia does not show a per-session prompt.
+// - Already authorized at OS level → grant immediately.
+// - Not yet determined → trigger the OS prompt, then reflect the user's choice.
+// - Denied/restricted → deny so WebRTC fails gracefully.
+- (void)webView:(WKWebView *)wkWebView
+    requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin
+    initiatedByFrame:(WKFrameInfo *)frame
+    type:(WKMediaCaptureType)type
+    decisionHandler:(void (^)(WKPermissionDecision))decisionHandler
+    API_AVAILABLE(ios(15.0))
+{
+    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    if (status == AVAuthorizationStatusAuthorized) {
+        decisionHandler(WKPermissionDecisionGrant);
+    } else if (status == AVAuthorizationStatusNotDetermined) {
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                decisionHandler(granted ? WKPermissionDecisionGrant : WKPermissionDecisionDeny);
+            });
+        }];
+    } else {
+        decisionHandler(WKPermissionDecisionDeny);
+    }
+}
+
+// Forward all other WKUIDelegate messages (e.g. JS alert/confirm/prompt panels)
+// to Cordova's original UIDelegate so nothing is lost.
+- (id)forwardingTargetForSelector:(SEL)aSelector {
+    if ([self.originalUIDelegate respondsToSelector:aSelector]) {
+        return self.originalUIDelegate;
+    }
+    return [super forwardingTargetForSelector:aSelector];
 }
 @end

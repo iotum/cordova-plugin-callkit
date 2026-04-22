@@ -1,8 +1,12 @@
 #import <Cordova/CDV.h>
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
+#import <WebKit/WebKit.h>
 
-@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate>
+@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate, WKUIDelegate>
+
+// WKUIDelegate chain — holds the original UIDelegate so we can forward unhandled messages
+@property (nonatomic, weak) id<WKUIDelegate> originalUIDelegate;
 
 // PushKit
 @property (nonatomic, copy) NSString *VoIPPushCallbackId;
