@@ -16,7 +16,6 @@ BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
 BOOL monitorAudioRouteChange = NO;
-BOOL isSpeakerOn = NO;
 BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
@@ -115,31 +114,36 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [handleTypes addObject:@(CXHandleTypePhoneNumber)];
     providerConfiguration.supportedHandleTypes = handleTypes;
     providerConfiguration.supportsVideo = hasVideo;
-    providerConfiguration.includesCallsInRecents = includeInRecents;
+    if (@available(iOS 11.0, *)) {
+        providerConfiguration.includesCallsInRecents = includeInRecents;
+    }
 
     self.provider.configuration = providerConfiguration;
 }
 
 - (void)setupAudioSession
 {
-    AVAudioSession *session = [AVAudioSession sharedInstance];
-    NSError *categoryError = nil;
-    BOOL categoryConfigured = [session setCategory:AVAudioSessionCategoryPlayAndRecord
-                                       withOptions:AVAudioSessionCategoryOptionAllowBluetoothHFP
-                                             error:&categoryError];
-    if (!categoryConfigured) {
-        [self logMessage:[NSString stringWithFormat:@"Failed to set audio session category: %@", categoryError]];
-    }
+    @try {
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        NSError *categoryError = nil;
+        BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
+                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                                                              | AVAudioSessionCategoryOptionAllowBluetooth
+                                                              | AVAudioSessionCategoryOptionAllowAirPlay
+                                                              | AVAudioSessionCategoryOptionAllowBluetoothA2DP
+                                                         error:&categoryError];
+        if (!categoryConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to set audio session category: %@", categoryError]];
+        }
 
-    NSError *modeError = nil;
-    BOOL modeConfigured = [session setMode:hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat
-                                     error:&modeError];
-    if (!modeConfigured) {
-        [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
+        NSError *modeError = nil;
+        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeVoiceChat error:&modeError];
+        if (!modeConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
+        }
     }
-
-    if (!monitorAudioRouteChange) {
-        isSpeakerOn = hasVideo;
+    @catch (NSException *exception) {
+        [self logMessage:@"Unknown error returned from setupAudioSession"];
     }
 }
 
@@ -451,14 +455,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
+    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
     [self logMessage:@"Programmatically turning speaker on"];
-    NSError *error = nil;
-    BOOL success = [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:&error];
+    BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
     if(success) {
-      isSpeakerOn = YES;
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is on"];
     } else {
-      [self logMessage:[NSString stringWithFormat:@"speakerOn failed: %@", error]];
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -467,14 +469,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)speakerOff:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
+    AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
     [self logMessage:@"Programmatically turning speaker off"];
-    NSError *error = nil;
-    BOOL success = [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];
+    BOOL success = [sessionInstance overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:nil];
     if(success) {
-      isSpeakerOn = NO;
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Speakerphone is off"];
     } else {
-      [self logMessage:[NSString stringWithFormat:@"speakerOff failed: %@", error]];
       pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
     }
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -484,19 +484,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     CDVPluginResult* pluginResult = nil;
     @try {
-        // If a call exists but the audio session hasn't been activated yet (window between
-        // performAnswerCallAction and didActivateAudioSession), the hardware route still reflects
-        // the pre-call state (e.g. .playback → speaker) and is unreliable.
-        // Fall back to isSpeakerOn which was correctly set in setupAudioSession.
-        if (self.activeCalls.count > 0 && !monitorAudioRouteChange) {
-            NSString* inferredRoute = isSpeakerOn ? @"speaker" : @"earpiece";
-            [self logMessage:[NSString stringWithFormat:@"getAudioRoute: session not yet active, inferring from isSpeakerOn=%d -> %@", isSpeakerOn, inferredRoute]];
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:inferredRoute];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-            return;
-        }
-
-        AVAudioSessionRouteDescription* currentRoute = [AVAudioSession sharedInstance].currentRoute;
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        AVAudioSessionRouteDescription* currentRoute = [sessionInstance currentRoute];
 
         NSString* currentOutputType = @"Unknown";
         if([currentRoute.outputs count] > 0) {
@@ -568,25 +557,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         NSNumber* reasonValue = notification.userInfo[AVAudioSessionRouteChangeReasonKey];
         int reason = [reasonValue intValue];
 
-        // Filter out unimportant route changes, but handle RouteConfigurationChange
-        // separately so we can re-apply the speaker override if WebRTC reconfigures the session
-        if (reason == AVAudioSessionRouteChangeReasonUnknown || reason == AVAudioSessionRouteChangeReasonWakeFromSleep) {
-            return;
-        }
-
-        if (reason == AVAudioSessionRouteChangeReasonRouteConfigurationChange) {
-            if (isSpeakerOn) {
-                AVAudioSessionRouteDescription* currentRoute = [AVAudioSession sharedInstance].currentRoute;
-                NSString* currentOutputType = ([currentRoute.outputs count] > 0) ? [currentRoute.outputs[0] portType] : @"";
-                if (![currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
-                    [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
-                }
-            }
+        // Filter out unimportant route changes
+        if (reason == AVAudioSessionRouteChangeReasonUnknown || reason == AVAudioSessionRouteChangeReasonWakeFromSleep || reason == AVAudioSessionRouteChangeReasonRouteConfigurationChange) {
             return;
         }
 
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[AVAudioSessionRouteChangePreviousRouteKey];
-        AVAudioSessionRouteDescription* currentRoute = [AVAudioSession sharedInstance].currentRoute;
+        AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
 
         // Get current output type
         NSString* currentOutputType = @"Unknown";
@@ -594,12 +571,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
         if([currentRoute.outputs count] > 0) {
             currentOutputType = [currentRoute.outputs[0] portType];
-        }
-
-        // Re-apply speaker override if user had speaker active and a device was unplugged
-        if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && isSpeakerOn &&
-            ![currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
-            [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
         }
 
         NSArray* outputs = [previousRouteKey outputs];
@@ -771,17 +742,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"activated audio"];
-    // Re-apply category and mode now that CallKit owns the session.
-    // WKWebView's WebRTC audio unit reads session config at activation time,
-    // so settings applied earlier in performAnswerCallAction may have been reset.
-    [self setupAudioSession];
-    monitorAudioRouteChange = YES;
 
-    // Apply speaker override for video calls (isSpeakerOn = YES set in setupAudioSession)
-    // and for the edge case where speakerOn() was called before the session activated.
-    if (isSpeakerOn) {
-        [audioSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
-    }
 
     // Emit answer callback deferred from performAnswerCallAction
     for (NSString *sessionId in self.activeCalls) {
@@ -805,7 +766,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == NO) {
-            [self logMessage:[NSString stringWithFormat:@"didActivateAudioSession: emitting deferred unhold for sessionId=%@", sessionId]];
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
             for (id callbackId in callbackIds[@"unhold"]) {
                 NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
@@ -820,13 +780,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"deactivated audio"];
-    monitorAudioRouteChange = NO;
+
 
     // Emit hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == YES) {
-            [self logMessage:[NSString stringWithFormat:@"didDeactivateAudioSession: emitting deferred hold for sessionId=%@", sessionId]];
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
             for (id callbackId in callbackIds[@"hold"]) {
                 NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
@@ -1254,7 +1213,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
 }
 
-#pragma mark - PushKit Delegate Methods
+#define PushKit Delegate Methods
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type{
     if([credentials.token length] == 0) {
         [self logMessage:@"No device token!"];
