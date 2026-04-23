@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "WebSocketAdvanced.h"
 #import <SocketRocket/SocketRocket.h>
+#import <WebRTC/RTCAudioSession.h>
 
 @implementation CordovaCall
 
@@ -742,7 +743,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"activated audio"];
-
+    [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
+    [RTCAudioSession sharedInstance].isAudioEnabled = YES;
+    monitorAudioRouteChange = YES;
 
     // Emit answer callback deferred from performAnswerCallAction
     for (NSString *sessionId in self.activeCalls) {
@@ -780,7 +783,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
     [self logMessage:@"deactivated audio"];
-
+    [RTCAudioSession sharedInstance].isAudioEnabled = NO;
+    [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
+    monitorAudioRouteChange = NO;
 
     // Emit hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
