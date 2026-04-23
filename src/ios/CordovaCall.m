@@ -475,17 +475,33 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 // safety timeout timer so the JS promise always settles.
 - (void)resolvePendingMuteCommandForSessionId:(NSString *)sessionId muted:(BOOL)muted
 {
-    NSString *callbackId = self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"];
-    if (!callbackId) return;
-    [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandCallbackId"];
+    // Always cancel the timer first so it cannot fire after we return.
     NSTimer *timer = self.activeCalls[sessionId][@"pendingMuteCommandTimer"];
     if (timer) {
         [timer invalidate];
         [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandTimer"];
     }
+    NSString *callbackId = self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"];
+    if (!callbackId) return;
+    [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandCallbackId"];
     NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", muted ? @"mute" : @"unmute"], @"sessionId": sessionId };
     CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
     [self.commandDelegate sendPluginResult:result callbackId:callbackId];
+}
+
+// Cancels any outstanding safety-timeout timers for a session (e.g. when the call ends).
+// Does not resolve the pending callbackIds — callers should decide whether to send an
+// error result before calling this.
+- (void)cancelPendingCommandTimersForSessionId:(NSString *)sessionId
+{
+    NSArray *timerKeys = @[@"pendingMuteCommandTimer", @"pendingHoldCommandTimer", @"pendingUnholdCommandTimer"];
+    for (NSString *key in timerKeys) {
+        NSTimer *timer = self.activeCalls[sessionId][key];
+        if (timer) {
+            [timer invalidate];
+            [self.activeCalls[sessionId] removeObjectForKey:key];
+        }
+    }
 }
 
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
@@ -761,14 +777,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     NSString *callbackKey = onHold ? @"pendingHoldCommandCallbackId" : @"pendingUnholdCommandCallbackId";
     NSString *timerKey    = onHold ? @"pendingHoldCommandTimer"      : @"pendingUnholdCommandTimer";
-    NSString *callbackId  = self.activeCalls[sessionId][callbackKey];
-    if (!callbackId) return;
-    [self.activeCalls[sessionId] removeObjectForKey:callbackKey];
+    // Always cancel the timer first so it cannot fire after we return.
     NSTimer *timer = self.activeCalls[sessionId][timerKey];
     if (timer) {
         [timer invalidate];
         [self.activeCalls[sessionId] removeObjectForKey:timerKey];
     }
+    NSString *callbackId  = self.activeCalls[sessionId][callbackKey];
+    if (!callbackId) return;
+    [self.activeCalls[sessionId] removeObjectForKey:callbackKey];
     NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", onHold ? @"hold" : @"unhold"], @"sessionId": sessionId };
     CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
     [self.commandDelegate sendPluginResult:result callbackId:callbackId];
@@ -923,6 +940,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 [self triggerCordovaEventForCallResponse:@"reject" sessionId:sessionId];
             }
         }
+        [self cancelPendingCommandTimersForSessionId:sessionId];
         [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
     }
     monitorAudioRouteChange = NO;
