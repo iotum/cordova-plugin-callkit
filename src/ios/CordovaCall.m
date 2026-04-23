@@ -584,14 +584,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:result callbackId:unholdCallbackId];
     }
-    // EndCall
-    NSString *endCallCallbackId = self.activeCalls[sessionId][@"pendingEndCallCommandCallbackId"];
-    if (endCallCallbackId) {
-        [self.activeCalls[sessionId] removeObjectForKey:@"pendingEndCallCommandCallbackId"];
-        NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
-        CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-        [self.commandDelegate sendPluginResult:result callbackId:endCallCallbackId];
-    }
 }
 
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
@@ -1079,14 +1071,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 [pendingCallResponses addObject:pendingResponse];
             } else {
                 [self triggerCordovaEventForCallResponse:@"reject" sessionId:sessionId];
-            }
-            [self cancelPendingCommandTimersForSessionId:sessionId];
-            // Resolve the endCall JS promise now (no audio session to wait for on rejected calls).
-            NSString *endCallCb = self.activeCalls[sessionId][@"pendingEndCallCommandCallbackId"];
-            if (endCallCb) {
-                NSDictionary *resultDict = @{ @"message": @"endCall event called successfully", @"sessionId": sessionId };
-                CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-                [self.commandDelegate sendPluginResult:result callbackId:endCallCb];
             }
             [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
         }
