@@ -786,9 +786,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated hold"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
-    // Reject if a programmatic hold is already in flight for this session.
-    if (self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"]) {
-        [self logMessage:@"hold: rejecting call — a hold action is already in flight"];
+    // Reject if a programmatic hold or unhold is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"] || self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"]) {
+        [self logMessage:@"hold: rejecting call — a hold/unhold action is already in flight"];
         NSDictionary *resultDict = @{ @"message": @"hold action already in flight", @"sessionId": sessionId };
         CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -830,9 +830,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated unhold"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
-    // Reject if a programmatic unhold is already in flight for this session.
-    if (self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"]) {
-        [self logMessage:@"unhold: rejecting call — an unhold action is already in flight"];
+    // Reject if a programmatic unhold or hold is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"] || self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"]) {
+        [self logMessage:@"unhold: rejecting call — a hold/unhold action is already in flight"];
         NSDictionary *resultDict = @{ @"message": @"unhold action already in flight", @"sessionId": sessionId };
         CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
