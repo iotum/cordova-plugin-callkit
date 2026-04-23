@@ -1302,21 +1302,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     [self receiveCall:newCommand];
 
+    // Build pluginResult in @try (success) or @catch (error), then send exactly once in @finally.
+    // A @catch + return does NOT skip @finally in Objective-C, so placing sendPluginResult in
+    // both @catch and @finally would call the callback twice on an exception.
+    __block CDVPluginResult* pluginResult = nil;
     @try {
         NSError * err;
         NSData * jsonData = [NSJSONSerialization dataWithJSONObject:payloadObj options:0 error:&err];
         NSString * dataString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         [results setObject:dataString forKey:@"extra"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:results];
     }
     @catch (NSException *exception) {
         [self logMessage:[NSString stringWithFormat:@"error: %@", exception.reason]];
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:exception.reason];
-        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
-        return;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:exception.reason];
     }
     @finally {
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:results];
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
         completion();

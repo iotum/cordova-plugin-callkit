@@ -16,40 +16,67 @@ exports.AudioRouteChangeType = {
   ROUTE_CHANGED: 'routeChanged'              // iOS: General route change
 };
 
+/**
+ * Helper that supports both callback-style and Promise-style invocations.
+ * When `successFn` is a function the call behaves exactly as before (callbacks).
+ * When `successFn` is omitted/undefined the call returns a native Promise so
+ * callers can use async/await.  Because a Promise can only be resolved or
+ * rejected once, this also guards against the native side accidentally firing
+ * the callback more than once.
+ */
+function execPromise(successFn, errorFn, plugin, action, args) {
+  if (typeof successFn === 'function') {
+    exec(successFn, errorFn, plugin, action, args);
+    return;
+  }
+  return new Promise(function (resolve, reject) {
+    exec(resolve, reject, plugin, action, args);
+  });
+}
+
 exports.setAppName = function (appName, success, error) {
-  exec(success, error, "CordovaCall", "setAppName", [appName]);
+  return execPromise(success, error, "CordovaCall", "setAppName", [appName]);
 };
 
 exports.setIcon = function (iconName, success, error) {
-  exec(success, error, "CordovaCall", "setIcon", [iconName]);
+  return execPromise(success, error, "CordovaCall", "setIcon", [iconName]);
 };
 
 exports.setRingtone = function (ringtoneName, success, error) {
-  exec(success, error, "CordovaCall", "setRingtone", [ringtoneName]);
+  return execPromise(success, error, "CordovaCall", "setRingtone", [ringtoneName]);
 };
 
 exports.setIncludeInRecents = function (value, success, error) {
-  if (typeof value == "boolean") {
-    exec(success, error, "CordovaCall", "setIncludeInRecents", [value]);
-  } else {
-    error("Value Must Be True Or False");
+  if (typeof value !== 'boolean') {
+    if (typeof success === 'function') {
+      error("Value Must Be True Or False");
+      return;
+    }
+    return Promise.reject("Value Must Be True Or False");
   }
+  return execPromise(success, error, "CordovaCall", "setIncludeInRecents", [value]);
 };
 
 exports.setDTMFState = function (value, success, error) {
-  if (typeof value == "boolean") {
-    exec(success, error, "CordovaCall", "setDTMFState", [value]);
-  } else {
-    error("Value Must Be True Or False");
+  if (typeof value !== 'boolean') {
+    if (typeof success === 'function') {
+      error("Value Must Be True Or False");
+      return;
+    }
+    return Promise.reject("Value Must Be True Or False");
   }
+  return execPromise(success, error, "CordovaCall", "setDTMFState", [value]);
 };
 
 exports.setVideo = function (value, success, error) {
-  if (typeof value == "boolean") {
-    exec(success, error, "CordovaCall", "setVideo", [value]);
-  } else {
-    error("Value Must Be True Or False");
+  if (typeof value !== 'boolean') {
+    if (typeof success === 'function') {
+      error("Value Must Be True Or False");
+      return;
+    }
+    return Promise.reject("Value Must Be True Or False");
   }
+  return execPromise(success, error, "CordovaCall", "setVideo", [value]);
 };
 
 exports.receiveCall = function (sessionId, from, id, success, error) {
@@ -60,7 +87,7 @@ exports.receiveCall = function (sessionId, from, id, success, error) {
   } else if (id) {
     id = id.toString();
   }
-  exec(success, error, "CordovaCall", "receiveCall", [from, id, sessionId]);
+  return execPromise(success, error, "CordovaCall", "receiveCall", [from, id, sessionId]);
 };
 
 exports.sendCall = function (sessionId, to, id, success, error) {
@@ -71,7 +98,7 @@ exports.sendCall = function (sessionId, to, id, success, error) {
   } else if (id) {
     id = id.toString();
   }
-  exec(success, error, "CordovaCall", "sendCall", [to, id, sessionId]);
+  return execPromise(success, error, "CordovaCall", "sendCall", [to, id, sessionId]);
 };
 
 exports.connectCall = function (sessionId, recentsSessionId, success, error) {
@@ -80,43 +107,43 @@ exports.connectCall = function (sessionId, recentsSessionId, success, error) {
     success = recentsSessionId;
     recentsSessionId = undefined;
   }
-  exec(success, error, "CordovaCall", "connectCall", [sessionId, recentsSessionId || null]);
+  return execPromise(success, error, "CordovaCall", "connectCall", [sessionId, recentsSessionId || null]);
 };
 
 exports.endCall = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "endCall", [sessionId]);
+  return execPromise(success, error, "CordovaCall", "endCall", [sessionId]);
 };
 
 exports.mute = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "mute", [sessionId]);
+  return execPromise(success, error, "CordovaCall", "mute", [sessionId]);
 };
 
 exports.unmute = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "unmute", [sessionId]);
+  return execPromise(success, error, "CordovaCall", "unmute", [sessionId]);
 };
 
 exports.speakerOn = function (success, error) {
-  exec(success, error, "CordovaCall", "speakerOn", []);
+  return execPromise(success, error, "CordovaCall", "speakerOn", []);
 };
 
 exports.speakerOff = function (success, error) {
-  exec(success, error, "CordovaCall", "speakerOff", []);
+  return execPromise(success, error, "CordovaCall", "speakerOff", []);
 };
 
 exports.getAudioRoute = function (success, error) {
-  exec(success, error, "CordovaCall", "getAudioRoute", []);
+  return execPromise(success, error, "CordovaCall", "getAudioRoute", []);
 };
 
 exports.callNumber = function (to, success, error) {
-  exec(success, error, "CordovaCall", "callNumber", [to]);
+  return execPromise(success, error, "CordovaCall", "callNumber", [to]);
 };
 
 exports.hold = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "hold", [sessionId]);
+  return execPromise(success, error, "CordovaCall", "hold", [sessionId]);
 };
 
 exports.unhold = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "unhold", [sessionId]);
+  return execPromise(success, error, "CordovaCall", "unhold", [sessionId]);
 };
 
 exports.on = function (e, f) {
@@ -133,15 +160,15 @@ exports.checkCallPermission = function (error) {
 };
 
 exports.canUseFullScreenIntent = function (success, error) {
-  exec(success, error, "CordovaCall", "canUseFullScreenIntent", []);
+  return execPromise(success, error, "CordovaCall", "canUseFullScreenIntent", []);
 };
 
 exports.openFullScreenIntentSettings = function (success, error) {
-  exec(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
+  return execPromise(success, error, "CordovaCall", "openFullScreenIntentSettings", []);
 };
 
 exports.dismissRingingCall = function (sessionId, success) {
-  exec(success, null, "CordovaCall", "dismissRingingCall", [sessionId]);
+  return execPromise(success, null, "CordovaCall", "dismissRingingCall", [sessionId]);
 }
 
 // iOS Only Functions
