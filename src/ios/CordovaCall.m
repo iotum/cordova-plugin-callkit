@@ -402,7 +402,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)mute:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"facetalk initiated mute"];
-    __block CDVPluginResult* pluginResult = nil;
     NSString* sessionId = [command.arguments objectAtIndex:0];
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
@@ -413,15 +412,25 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             if (error == nil) {
                 self.activeCalls[sessionId][@"pendingMuteActionUUID"] = muteAction.UUID;
                 self.activeCalls[sessionId][@"isMuted"] = @YES;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Muted Successfully"];
+                self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"] = command.callbackId;
+                // Defer promise resolution until performSetMutedCallAction confirms the action.
+                // Fall back after a modest timeout in case the callback never arrives.
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
+                        [self resolvePendingMuteCommandForSessionId:sessionId muted:YES];
+                    }];
+                    if (self.activeCalls[sessionId]) {
+                        self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
+                    }
+                });
             } else {
                 [self logMessage:@"Error occurred muting Call"];
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to mute"];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to mute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -429,7 +438,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)unmute:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"facetalk initiated unmute"];
-    __block CDVPluginResult* pluginResult = nil;
     NSString* sessionId = [command.arguments objectAtIndex:0];
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
@@ -440,17 +448,44 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             if (error == nil) {
                 self.activeCalls[sessionId][@"pendingMuteActionUUID"] = unmuteAction.UUID;
                 self.activeCalls[sessionId][@"isMuted"] = @NO;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Unmuted Successfully"];
+                self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"] = command.callbackId;
+                // Defer promise resolution until performSetMutedCallAction confirms the action.
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
+                        [self resolvePendingMuteCommandForSessionId:sessionId muted:NO];
+                    }];
+                    if (self.activeCalls[sessionId]) {
+                        self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
+                    }
+                });
             } else {
                 [self logMessage:@"Error occurred unmuting Call"];
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to unmute"];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to unmute"];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
+}
+
+// Resolves and clears a pending programmatic mute/unmute command callbackId.
+// Called from performSetMutedCallAction (on action confirmation) and from the
+// safety timeout timer so the JS promise always settles.
+- (void)resolvePendingMuteCommandForSessionId:(NSString *)sessionId muted:(BOOL)muted
+{
+    NSString *callbackId = self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"];
+    if (!callbackId) return;
+    [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandCallbackId"];
+    NSTimer *timer = self.activeCalls[sessionId][@"pendingMuteCommandTimer"];
+    if (timer) {
+        [timer invalidate];
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandTimer"];
+    }
+    NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", muted ? @"mute" : @"unmute"], @"sessionId": sessionId };
+    CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+    [self.commandDelegate sendPluginResult:result callbackId:callbackId];
 }
 
 - (void)speakerOn:(CDVInvokedUrlCommand*)command
@@ -652,7 +687,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)hold:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"facetalk initiated hold"];
-    __block CDVPluginResult* pluginResult = nil;
     NSString* sessionId = [command.arguments objectAtIndex:0];
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
@@ -661,18 +695,26 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Programmatically Holding Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"] = command.callbackId;
+                // Defer promise resolution until didDeactivateAudioSession confirms the hold.
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
+                        [self resolvePendingHoldCommandForSessionId:sessionId onHold:YES];
+                    }];
+                    if (self.activeCalls[sessionId]) {
+                        self.activeCalls[sessionId][@"pendingHoldCommandTimer"] = timer;
+                    }
+                });
             } else {
                 [self logMessage:@"Error occurred holding Call"];
                 NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
         NSDictionary *resultDict = @{ @"message": @"no active call to hold", @"sessionId": sessionId };
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -680,7 +722,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)unhold:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"facetalk initiated unhold"];
-    __block CDVPluginResult* pluginResult = nil;
     NSString* sessionId = [command.arguments objectAtIndex:0];
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
@@ -689,20 +730,48 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unholding Call: %@", sessionId]];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
-                NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"] = command.callbackId;
+                // Defer promise resolution until didActivateAudioSession confirms the unhold.
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
+                        [self resolvePendingHoldCommandForSessionId:sessionId onHold:NO];
+                    }];
+                    if (self.activeCalls[sessionId]) {
+                        self.activeCalls[sessionId][@"pendingUnholdCommandTimer"] = timer;
+                    }
+                });
             } else {
                 [self logMessage:@"Error occurred unholding Call"];
                 NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }];
     } else {
         NSDictionary *resultDict = @{ @"message": @"no active call to unhold", @"sessionId": sessionId };
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
+}
+
+// Resolves and clears a pending programmatic hold/unhold command callbackId.
+// Called from didDeactivateAudioSession (hold) / didActivateAudioSession (unhold)
+// and from the safety-timeout timer so the JS promise always settles.
+- (void)resolvePendingHoldCommandForSessionId:(NSString *)sessionId onHold:(BOOL)onHold
+{
+    NSString *callbackKey = onHold ? @"pendingHoldCommandCallbackId" : @"pendingUnholdCommandCallbackId";
+    NSString *timerKey    = onHold ? @"pendingHoldCommandTimer"      : @"pendingUnholdCommandTimer";
+    NSString *callbackId  = self.activeCalls[sessionId][callbackKey];
+    if (!callbackId) return;
+    [self.activeCalls[sessionId] removeObjectForKey:callbackKey];
+    NSTimer *timer = self.activeCalls[sessionId][timerKey];
+    if (timer) {
+        [timer invalidate];
+        [self.activeCalls[sessionId] removeObjectForKey:timerKey];
+    }
+    NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", onHold ? @"hold" : @"unhold"], @"sessionId": sessionId };
+    CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+    [self.commandDelegate sendPluginResult:result callbackId:callbackId];
 }
 
 // CallKit - Provider
@@ -747,16 +816,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     monitorAudioRouteChange = YES;
 
-    // Emit unhold callback deferred from performSetHeldCallAction
+    // Resolve unhold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == NO) {
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
-            for (id callbackId in callbackIds[@"unhold"]) {
-                NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-                [pluginResult setKeepCallbackAsBool:YES];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+            if (self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"]) {
+                // Programmatic unhold: resolve the JS command promise, do not emit event.
+                [self resolvePendingHoldCommandForSessionId:sessionId onHold:NO];
+            } else {
+                // UI-initiated unhold: emit the normal event callback.
+                for (id callbackId in callbackIds[@"unhold"]) {
+                    NSDictionary *resultDict = @{ @"message": @"unhold event called successfully", @"sessionId": sessionId };
+                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                    [pluginResult setKeepCallbackAsBool:YES];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+                }
             }
         }
     }
@@ -769,16 +844,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
 
-    // Emit hold callback deferred from performSetHeldCallAction
+    // Resolve hold callback deferred from performSetHeldCallAction
     for (NSString *sessionId in self.activeCalls) {
         NSNumber *pendingHold = self.activeCalls[sessionId][@"pendingHoldEmit"];
         if (pendingHold != nil && [pendingHold boolValue] == YES) {
             [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldEmit"];
-            for (id callbackId in callbackIds[@"hold"]) {
-                NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-                [pluginResult setKeepCallbackAsBool:YES];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+            if (self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"]) {
+                // Programmatic hold: resolve the JS command promise, do not emit event.
+                [self resolvePendingHoldCommandForSessionId:sessionId onHold:YES];
+            } else {
+                // UI-initiated hold: emit the normal event callback.
+                for (id callbackId in callbackIds[@"hold"]) {
+                    NSDictionary *resultDict = @{ @"message": @"hold event called successfully", @"sessionId": sessionId };
+                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                    [pluginResult setKeepCallbackAsBool:YES];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+                }
             }
         }
     }
@@ -893,14 +974,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     [action fulfill];
 
-    for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
-        [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
-        CDVPluginResult* pluginResult = nil;
-        // Send to facetalk which call was muted/unmuted
-        NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": sessionId };
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-        [pluginResult setKeepCallbackAsBool:YES];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+    if (expectedUUID != nil) {
+        // Programmatic action: resolve the JS command promise instead of emitting
+        // to event listeners.  resolvePendingMuteCommandForSessionId also cancels
+        // the safety-timeout timer.
+        [self resolvePendingMuteCommandForSessionId:sessionId muted:isMuted];
+    } else {
+        // UI-initiated action: emit the normal event callback.
+        for (id callbackId in callbackIds[isMuted?@"mute":@"unmute"]) {
+            [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
+            NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": sessionId };
+            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+            [pluginResult setKeepCallbackAsBool:YES];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        }
     }
 }
 
