@@ -403,6 +403,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated mute"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
+    // Reject if a programmatic mute/unmute is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"]) {
+        [self logMessage:@"mute: rejecting call — a mute/unmute action is already in flight"];
+        NSDictionary *resultDict = @{ @"message": @"mute action already in flight", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
@@ -416,21 +424,25 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 // Defer promise resolution until performSetMutedCallAction confirms the action.
                 // Fall back after a modest timeout in case the callback never arrives.
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!self.activeCalls[sessionId]) {
+                        // Session was removed before the timer could be stored — nothing to do.
+                        return;
+                    }
                     NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
                         [self resolvePendingMuteCommandForSessionId:sessionId muted:YES];
                     }];
-                    if (self.activeCalls[sessionId]) {
-                        self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
-                    }
+                    self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
                 });
             } else {
                 [self logMessage:@"Error occurred muting Call"];
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
         }];
     } else {
-        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to mute"];
+        NSDictionary *resultDict = @{ @"message": @"No active call to mute", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -439,6 +451,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated unmute"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
+    // Reject if a programmatic mute/unmute is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"]) {
+        [self logMessage:@"unmute: rejecting call — a mute/unmute action is already in flight"];
+        NSDictionary *resultDict = @{ @"message": @"unmute action already in flight", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:NO];
@@ -451,21 +471,24 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"] = command.callbackId;
                 // Defer promise resolution until performSetMutedCallAction confirms the action.
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!self.activeCalls[sessionId]) {
+                        return;
+                    }
                     NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
                         [self resolvePendingMuteCommandForSessionId:sessionId muted:NO];
                     }];
-                    if (self.activeCalls[sessionId]) {
-                        self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
-                    }
+                    self.activeCalls[sessionId][@"pendingMuteCommandTimer"] = timer;
                 });
             } else {
                 [self logMessage:@"Error occurred unmuting Call"];
-                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"An error occurred"];
+                NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
+                CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
         }];
     } else {
-        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No active call to unmute"];
+        NSDictionary *resultDict = @{ @"message": @"No active call to unmute", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
 }
@@ -481,6 +504,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [timer invalidate];
         [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandTimer"];
     }
+    // Clear the pending action UUID so a future UI-initiated action is not misclassified.
+    [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteActionUUID"];
     NSString *callbackId = self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"];
     if (!callbackId) return;
     [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandCallbackId"];
@@ -489,18 +514,49 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:result callbackId:callbackId];
 }
 
-// Cancels any outstanding safety-timeout timers for a session (e.g. when the call ends).
-// Does not resolve the pending callbackIds — callers should decide whether to send an
-// error result before calling this.
+// Cancels any outstanding safety-timeout timers and rejects any pending command
+// callbackIds for a session (called when the call ends so JS promises always settle).
 - (void)cancelPendingCommandTimersForSessionId:(NSString *)sessionId
 {
-    NSArray *timerKeys = @[@"pendingMuteCommandTimer", @"pendingHoldCommandTimer", @"pendingUnholdCommandTimer"];
-    for (NSString *key in timerKeys) {
-        NSTimer *timer = self.activeCalls[sessionId][key];
-        if (timer) {
-            [timer invalidate];
-            [self.activeCalls[sessionId] removeObjectForKey:key];
-        }
+    // Mute/unmute
+    NSTimer *muteTimer = self.activeCalls[sessionId][@"pendingMuteCommandTimer"];
+    if (muteTimer) {
+        [muteTimer invalidate];
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandTimer"];
+    }
+    [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteActionUUID"];
+    NSString *muteCallbackId = self.activeCalls[sessionId][@"pendingMuteCommandCallbackId"];
+    if (muteCallbackId) {
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingMuteCommandCallbackId"];
+        NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
+        CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:result callbackId:muteCallbackId];
+    }
+    // Hold
+    NSTimer *holdTimer = self.activeCalls[sessionId][@"pendingHoldCommandTimer"];
+    if (holdTimer) {
+        [holdTimer invalidate];
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldCommandTimer"];
+    }
+    NSString *holdCallbackId = self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"];
+    if (holdCallbackId) {
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingHoldCommandCallbackId"];
+        NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
+        CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:result callbackId:holdCallbackId];
+    }
+    // Unhold
+    NSTimer *unholdTimer = self.activeCalls[sessionId][@"pendingUnholdCommandTimer"];
+    if (unholdTimer) {
+        [unholdTimer invalidate];
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingUnholdCommandTimer"];
+    }
+    NSString *unholdCallbackId = self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"];
+    if (unholdCallbackId) {
+        [self.activeCalls[sessionId] removeObjectForKey:@"pendingUnholdCommandCallbackId"];
+        NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
+        CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:result callbackId:unholdCallbackId];
     }
 }
 
@@ -704,6 +760,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated hold"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
+    // Reject if a programmatic hold is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"]) {
+        [self logMessage:@"hold: rejecting call — a hold action is already in flight"];
+        NSDictionary *resultDict = @{ @"message": @"hold action already in flight", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetHeldCallAction *holdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:YES];
@@ -714,12 +778,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 self.activeCalls[sessionId][@"pendingHoldCommandCallbackId"] = command.callbackId;
                 // Defer promise resolution until didDeactivateAudioSession confirms the hold.
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!self.activeCalls[sessionId]) {
+                        return;
+                    }
                     NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
                         [self resolvePendingHoldCommandForSessionId:sessionId onHold:YES];
                     }];
-                    if (self.activeCalls[sessionId]) {
-                        self.activeCalls[sessionId][@"pendingHoldCommandTimer"] = timer;
-                    }
+                    self.activeCalls[sessionId][@"pendingHoldCommandTimer"] = timer;
                 });
             } else {
                 [self logMessage:@"Error occurred holding Call"];
@@ -739,6 +804,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     [self logMessage:@"facetalk initiated unhold"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
+    // Reject if a programmatic unhold is already in flight for this session.
+    if (self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"]) {
+        [self logMessage:@"unhold: rejecting call — an unhold action is already in flight"];
+        NSDictionary *resultDict = @{ @"message": @"unhold action already in flight", @"sessionId": sessionId };
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if (call) {
         CXSetHeldCallAction *unholdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:NO];
@@ -749,12 +822,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 self.activeCalls[sessionId][@"pendingUnholdCommandCallbackId"] = command.callbackId;
                 // Defer promise resolution until didActivateAudioSession confirms the unhold.
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!self.activeCalls[sessionId]) {
+                        return;
+                    }
                     NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *t) {
                         [self resolvePendingHoldCommandForSessionId:sessionId onHold:NO];
                     }];
-                    if (self.activeCalls[sessionId]) {
-                        self.activeCalls[sessionId][@"pendingUnholdCommandTimer"] = timer;
-                    }
+                    self.activeCalls[sessionId][@"pendingUnholdCommandTimer"] = timer;
                 });
             } else {
                 [self logMessage:@"Error occurred unholding Call"];
