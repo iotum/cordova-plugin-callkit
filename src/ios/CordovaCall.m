@@ -452,7 +452,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
-// Resolves the JS promise for a programmatic command (mute/unmute/hold/unhold).
 // Resolves the JS promise for a programmatic command (mute/unmute/hold/unhold/sendCall/endCall).
 // Called from performSetMutedCallAction, performSetHeldCallAction, and didActivate/DeactivateAudioSession.
 - (void)resolveCommandForSessionId:(NSString *)sessionId actionUUIDString:(NSString *)uuidStr
