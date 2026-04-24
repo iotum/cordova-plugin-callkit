@@ -461,6 +461,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
     NSString *callbackId = entry[@"callbackId"];
     if (!callbackId) return;
+    [self logMessage:[NSString stringWithFormat:@"resolved %@ promise for sessionId: %@", entry[@"event"], sessionId]];
     NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", entry[@"event"]], @"sessionId": sessionId };
     CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
     [self.commandDelegate sendPluginResult:result callbackId:callbackId];
@@ -476,6 +477,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         if (![entry isKindOfClass:[NSMutableDictionary class]]) continue;
         NSString *cbId = entry[@"callbackId"];
         if (cbId) {
+            [self logMessage:[NSString stringWithFormat:@"rejectPendingCommandsForSessionId: rejecting %@ promise for sessionId: %@", entry[@"event"], sessionId]];
             NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
             CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
             [self.commandDelegate sendPluginResult:result callbackId:cbId];
