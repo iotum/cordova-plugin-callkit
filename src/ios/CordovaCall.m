@@ -863,8 +863,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Terminating sessions: emit hangup, resolve endCall promise if programmatic, then tear down.
     for (NSString *sessionId in terminatingSessions) {
         NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingDeactivateAudioSessionEmits"];
-        [self.activeCalls[sessionId] removeObjectForKey:@"pendingDeactivateAudioSessionEmits"];
-        for (NSDictionary *item in pendingEmits) {
+        NSArray *pendingEmitsSnapshot = [pendingEmits copy];
+        [pendingEmits removeAllObjects];
+        for (NSDictionary *item in pendingEmitsSnapshot) {
             NSString *uuidStr = item[@"uuid"];
             NSString *eventType = item[@"type"];
             if ([eventType isEqualToString:@"hangup"]) {
