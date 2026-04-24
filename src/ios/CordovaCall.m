@@ -32,8 +32,6 @@ NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
 
-double actionTimeoutInterval = 3.0;
-
 NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)pluginInitialize
@@ -227,14 +225,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
-- (void)setActionTimeout:(CDVInvokedUrlCommand*)command
-{
-    double timeoutMs = [[command.arguments objectAtIndex:0] doubleValue];
-    actionTimeoutInterval = timeoutMs / 1000.0;
-    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"actionTimeout Changed Successfully"];
-    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-}
-
 - (void)receiveCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"receiveCall"];
@@ -313,11 +303,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"sendCall" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:startCallAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
             }
@@ -368,11 +353,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 // Persist UUID→callbackId in the shared map so didDeactivateAudioSession can
                 // resolve the JS promise once CallKit confirms the end.
                 self.activeCalls[sessionId][@"callbackMap"][endCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"endCall" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][endCallAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:endCallAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self logMessage:[error localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": [error localizedDescription], @"sessionId": sessionId };
@@ -432,11 +412,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"callbackMap"][muteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"mute" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][muteAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:muteAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self logMessage:@"Error occurred muting Call"];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
@@ -463,11 +438,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unmute" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:unmuteAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self logMessage:@"Error occurred unmuting Call"];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
@@ -483,15 +453,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Resolves the JS promise for a programmatic command (mute/unmute/hold/unhold).
-// Cancels the safety timer, removes the callbackMap entry, and sends the OK result.
-// Called from performSetMutedCallAction, didActivate/DeactivateAudioSession, and
-// the safety-timeout timer so the JS promise always settles.
+// Resolves the JS promise for a programmatic command (mute/unmute/hold/unhold/sendCall/endCall).
+// Called from performSetMutedCallAction, performSetHeldCallAction, and didActivate/DeactivateAudioSession.
 - (void)resolveCommandForSessionId:(NSString *)sessionId actionUUIDString:(NSString *)uuidStr
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][uuidStr];
     if (!entry) return;
-    NSTimer *timer = entry[@"timeoutTimer"];
-    if (timer) [timer invalidate];
     // Do not remove from the callbackMap, as callkit may perform more than one performXCallAction on a programatic action
     // That way CordovaCall will still resolve the promise and JS will discard any duplicates
     // [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
@@ -502,16 +469,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:result callbackId:callbackId];
 }
 
-// Cancels any outstanding safety-timeout timers and rejects any pending command
-// callbackIds for a session (called when the call ends so JS promises always settle).
-- (void)cancelPendingCommandTimersForSessionId:(NSString *)sessionId
+// Rejects any pending programmatic-command promises for a session with a "call ended" error.
+// Called when a session is torn down so outstanding JS promises always settle.
+- (void)rejectPendingCommandsForSessionId:(NSString *)sessionId
 {
     NSMutableDictionary *callbackMap = self.activeCalls[sessionId][@"callbackMap"];
     for (NSString *uuidStr in [callbackMap allKeys]) {
         NSMutableDictionary *entry = callbackMap[uuidStr];
         if (![entry isKindOfClass:[NSMutableDictionary class]]) continue;
-        NSTimer *timer = entry[@"timeoutTimer"];
-        if (timer) [timer invalidate];
         NSString *cbId = entry[@"callbackId"];
         if (cbId) {
             NSDictionary *resultDict = @{ @"message": @"call ended", @"sessionId": sessionId };
@@ -730,11 +695,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"callbackMap"][holdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"hold" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][holdAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:holdAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self logMessage:@"Error occurred holding Call"];
                 NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
@@ -761,11 +721,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error == nil) {
                 self.activeCalls[sessionId][@"callbackMap"][unholdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unhold" } mutableCopy];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.activeCalls[sessionId][@"callbackMap"][unholdAction.UUID.UUIDString][@"timeoutTimer"] = [NSTimer scheduledTimerWithTimeInterval:actionTimeoutInterval repeats:NO block:^(NSTimer *t) {
-                        [self resolveCommandForSessionId:sessionId actionUUIDString:unholdAction.UUID.UUIDString];
-                    }];
-                });
             } else {
                 [self logMessage:@"Error occurred unholding Call"];
                 NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
@@ -935,7 +890,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 }
             }
         }
-        [self cancelPendingCommandTimersForSessionId:sessionId];
+        [self rejectPendingCommandsForSessionId:sessionId];
         [self.activeCalls removeObjectForKey:sessionId];
     }
 }

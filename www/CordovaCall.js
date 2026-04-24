@@ -52,10 +52,6 @@ exports.setVideo = function (value, success, error) {
   }
 };
 
-exports.setActionTimeout = function (timeoutMs, success, error) {
-  exec(success, error, "CordovaCall", "setActionTimeout", [timeoutMs]);
-};
-
 exports.receiveCall = function (sessionId, from, id, success, error) {
   if (typeof id == "function") {
     error = success;
