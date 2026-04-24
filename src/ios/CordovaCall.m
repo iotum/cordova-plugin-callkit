@@ -458,7 +458,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][uuidStr];
     if (!entry) return;
-    // Do not remove from the callbackMap, as callkit may perform more than one performXCallAction on a programatic action
+    // Do not remove from the callbackMap, as callkit may perform more than one performXCallAction on a programmatic action
     // That way CordovaCall will still resolve the promise and JS will discard any duplicates
     // [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
     NSString *callbackId = entry[@"callbackId"];
