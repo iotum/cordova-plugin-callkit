@@ -940,6 +940,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             } else {
                 [self triggerCordovaEventForCallResponse:@"reject" sessionId:sessionId];
             }
+            // Resolve the programmatic endCall promise immediately — didDeactivateAudioSession
+            // will never fire for a call that was never connected.
+            if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
+                [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
+            }
+            [self rejectPendingCommandsForSessionId:sessionId];
             [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
         }
     }
