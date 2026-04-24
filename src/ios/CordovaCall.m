@@ -777,8 +777,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     for (NSString *sessionId in self.activeCalls) {
         NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"];
         if (!pendingEmits || pendingEmits.count == 0) continue;
-        [self.activeCalls[sessionId] removeObjectForKey:@"pendingActivateAudioSessionEmits"];
-        for (NSDictionary *item in pendingEmits) {
+        NSArray *pendingItems = [pendingEmits copy];
+        [pendingEmits removeAllObjects];
+        for (NSDictionary *item in pendingItems) {
             NSString *uuidStr = item[@"uuid"];
             NSString *eventType = item[@"type"];
             if (self.activeCalls[sessionId][@"callbackMap"][uuidStr]) {
