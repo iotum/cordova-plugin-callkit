@@ -842,8 +842,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         if ([terminatingSessions containsObject:sessionId]) continue;
         NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingDeactivateAudioSessionEmits"];
         if (!pendingEmits || pendingEmits.count == 0) continue;
-        [self.activeCalls[sessionId] removeObjectForKey:@"pendingDeactivateAudioSessionEmits"];
-        for (NSDictionary *item in pendingEmits) {
+        NSArray *pendingEmitsSnapshot = [pendingEmits copy];
+        [pendingEmits removeAllObjects];
+        for (NSDictionary *item in pendingEmitsSnapshot) {
             NSString *uuidStr = item[@"uuid"];
             NSString *eventType = item[@"type"];
             if (self.activeCalls[sessionId][@"callbackMap"][uuidStr]) {
