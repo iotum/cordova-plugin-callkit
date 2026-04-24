@@ -458,9 +458,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][uuidStr];
     if (!entry) return;
-    // Do not remove from the callbackMap, as callkit may perform more than one performXCallAction on a programmatic action
-    // That way CordovaCall will still resolve the promise and JS will discard any duplicates
-    // [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
+    [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
     NSString *callbackId = entry[@"callbackId"];
     if (!callbackId) return;
     NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", entry[@"event"]], @"sessionId": sessionId };
@@ -968,7 +966,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [action fulfill];
         return;
     }
-    [self logMessage:[NSString stringWithFormat:@"CallKit received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"CallKit performSetMutedCallAction received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
 
     [action fulfill];
 
@@ -1005,7 +1003,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     CXCall *call = [self callForUUID:action.callUUID];
     BOOL isOnHold = action.onHold;
-    [self logMessage:[NSString stringWithFormat:@"Callkit UI received %@ event, callkit says: %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"Callkit performSetHeldCallAction received %@ event, callkit says: %@, sessionId: %@", isOnHold ? @"hold" : @"unhold", [call isOnHold] ? @"on hold" : @"not on hold", sessionId]];
     if (!sessionId) {
         [self logMessage:[NSString stringWithFormat:@"performSetHeldCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isOnHold ? @"hold" : @"unhold"]];
         [action fulfill];
