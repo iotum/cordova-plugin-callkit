@@ -267,6 +267,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 // This prevents the dismiss being silently dropped during cold launch.
                 if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
                     [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
+                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
                     [self _dismissRingingCall:sessionId];
                 } else {
                     [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
