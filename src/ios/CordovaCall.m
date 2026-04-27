@@ -262,7 +262,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.supportsDTMF = enableDTMF;
         [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
             if(error == nil) {
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+                // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
+                // end the call immediately now that CallKit has registered it.
+                // This prevents the dismiss being silently dropped during cold launch.
+                if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
+                    [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
+                    [self _dismissRingingCall:sessionId];
+                } else {
+                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+                }
             } else {
                 [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
                 return;
@@ -1047,6 +1055,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXCall *call = [self callForSessionId:sessionId];
     if (call && !call.hasConnected) {
         [self.provider reportCallWithUUID:call.UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+        [self rejectPendingCommandsForSessionId:sessionId];
+        [self.activeCalls removeObjectForKey:sessionId];
+        return YES;
+    } else if (self.activeCalls[sessionId] && !call) {
+        // The activeCalls entry exists but CallKit hasn't registered it yet
+        // (reportNewIncomingCallWithUUID completion hasn't fired).
+        // Flag it so the completion block ends the call immediately once registered.
+        [self logMessage:[NSString stringWithFormat:@"_dismissRingingCall: call not yet registered with CallKit, setting pendingDismiss for sessionId: %@", sessionId]];
+        self.activeCalls[sessionId][@"pendingDismiss"] = @YES;
         return YES;
     }
     return NO;
@@ -1077,7 +1094,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"callUUID": callUUID,
         @"callbackMap": [NSMutableDictionary dictionary],
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
-        @"pendingDeactivateAudioSessionEmits": [NSMutableArray array]
+        @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
+        @"pendingDismiss": @NO
     } mutableCopy];
 }
 
