@@ -262,7 +262,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callUpdate.supportsDTMF = enableDTMF;
         [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
             if(error == nil) {
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+                // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
+                // end the call immediately now that CallKit has registered it.
+                // This prevents the dismiss being silently dropped during cold launch.
+                if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
+                    [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
+                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
+                    [self _dismissRingingCall:sessionId];
+                } else {
+                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+                }
             } else {
                 [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
                 return;
@@ -1047,6 +1056,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXCall *call = [self callForSessionId:sessionId];
     if (call && !call.hasConnected) {
         [self.provider reportCallWithUUID:call.UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+        [self rejectPendingCommandsForSessionId:sessionId];
+        [self.activeCalls removeObjectForKey:sessionId];
+        return YES;
+    } else if (self.activeCalls[sessionId] && !call) {
+        // The activeCalls entry exists but CallKit hasn't registered it yet
+        // (reportNewIncomingCallWithUUID completion hasn't fired).
+        // Flag it so the completion block ends the call immediately once registered.
+        [self logMessage:[NSString stringWithFormat:@"_dismissRingingCall: call not yet registered with CallKit, setting pendingDismiss for sessionId: %@", sessionId]];
+        self.activeCalls[sessionId][@"pendingDismiss"] = @YES;
         return YES;
     }
     return NO;
@@ -1077,7 +1095,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"callUUID": callUUID,
         @"callbackMap": [NSMutableDictionary dictionary],
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
-        @"pendingDeactivateAudioSessionEmits": [NSMutableArray array]
+        @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
+        @"pendingDismiss": @NO
     } mutableCopy];
 }
 
@@ -1173,6 +1192,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                                      selector:@selector(_keepWKWebViewActive:)
                                      userInfo:nil
                                      repeats:YES];
+
+    // Every 29 seconds check whether CallKit still has active calls.
+    // If there are none, stop the keep-alive so it doesn't run indefinitely in the background.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self.callController.callObserver.calls.count == 0) {
+            [self logMessage:@"startKeepAliveInterval: no active calls after 29s, stopping keep-alive"];
+            [self stopKeepAliveInterval];
+        }
+    });
 }
 
 - (void) stopKeepAliveInterval;
@@ -1378,7 +1406,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     id fromValue = [payloadObj valueForKey:@"from"];
-    NSString *from = [fromValue isKindOfClass:[NSString class]] ? fromValue : @"Unknown";
+    NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : @"Unknown";
     NSArray* args = [NSArray arrayWithObjects:from, [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
@@ -1396,16 +1424,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         NSData * jsonData = [NSJSONSerialization dataWithJSONObject:payloadObj options:0 error:&err];
         NSString * dataString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         [results setObject:dataString forKey:@"extra"];
+        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:results];
+        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
+        completion();
     }
     @catch (NSException *exception) {
         [self logMessage:[NSString stringWithFormat:@"error: %@", exception.reason]];
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:exception.reason];
-        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
-        return;
-    }
-    @finally {
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:results];
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
         completion();
