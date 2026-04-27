@@ -1191,6 +1191,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                                      selector:@selector(_keepWKWebViewActive:)
                                      userInfo:nil
                                      repeats:YES];
+
+    // Every 29 seconds check whether CallKit still has active calls.
+    // If there are none, stop the keep-alive so it doesn't run indefinitely in the background.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(29 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self.callController.callObserver.calls.count == 0) {
+            [self logMessage:@"startKeepAliveInterval: no active calls after 29s, stopping keep-alive"];
+            [self stopKeepAliveInterval];
+        }
+    });
 }
 
 - (void) stopKeepAliveInterval;
@@ -1396,7 +1405,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     id fromValue = [payloadObj valueForKey:@"from"];
-    NSString *from = [fromValue isKindOfClass:[NSString class]] ? fromValue : @"Unknown";
+    NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : @"Unknown";
     NSArray* args = [NSArray arrayWithObjects:from, [NSNull null], sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
