@@ -19,6 +19,7 @@
 
 - (void)updateProviderConfig;
 - (void)setupAudioSession;
+- (void)teardownAudioSession;
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command;
 - (void)setIcon:(CDVInvokedUrlCommand*)command;

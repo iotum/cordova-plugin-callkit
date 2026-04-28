@@ -149,6 +149,30 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 }
 
+- (void)teardownAudioSession
+{
+    @try {
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        NSError *categoryError = nil;
+        BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayback
+                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                                                         error:&categoryError];
+        if (!categoryConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session category: %@", categoryError]];
+        }
+
+        NSError *modeError = nil;
+        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeDefault error:&modeError];
+        if (!modeConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session mode: %@", modeError]];
+        }
+        [self logMessage:@"teardownAudioSession: audio session reset to Playback/MixWithOthers/Default"];
+    }
+    @catch (NSException *exception) {
+        [self logMessage:@"Unknown error returned from teardownAudioSession"];
+    }
+}
+
 - (void)setAppName:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
@@ -903,6 +927,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
         [self rejectPendingCommandsForSessionId:sessionId];
         [self.activeCalls removeObjectForKey:sessionId];
+    }
+
+    // Once all calls have ended, reset the audio session to a mixing-friendly state
+    // so subsequent media playback behaves normally and getAudioRoute reflects reality.
+    if (self.callController.callObserver.calls.count == 0) {
+        [self teardownAudioSession];
     }
 }
 
