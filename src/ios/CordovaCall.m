@@ -32,6 +32,12 @@ NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
 
+// Saved audio session state captured before setupAudioSession; restored in teardownAudioSession.
+AVAudioSessionCategory _savedAudioCategory;
+AVAudioSessionMode _savedAudioMode;
+AVAudioSessionCategoryOptions _savedAudioCategoryOptions = 0;
+BOOL _audioSessionStateSaved = NO;
+
 NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)pluginInitialize
@@ -127,6 +133,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     @try {
         AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+
+        // Capture the host app's audio session state the first time we configure it for a call,
+        // so teardownAudioSession can restore exactly what was there before.
+        @synchronized(self) {
+            if (!_audioSessionStateSaved) {
+                _savedAudioCategory = sessionInstance.category;
+                _savedAudioMode = sessionInstance.mode;
+                _savedAudioCategoryOptions = sessionInstance.categoryOptions;
+                _audioSessionStateSaved = YES;
+            }
+        }
+
         NSError *categoryError = nil;
         BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
                                                    withOptions: AVAudioSessionCategoryOptionAllowBluetooth
@@ -153,20 +171,32 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     @try {
         AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+
+        // Restore whatever category/options/mode the host app had before the call began.
+        AVAudioSessionCategory categoryToRestore = _audioSessionStateSaved ? _savedAudioCategory : AVAudioSessionCategoryPlayback;
+        AVAudioSessionCategoryOptions optionsToRestore = _audioSessionStateSaved ? _savedAudioCategoryOptions : AVAudioSessionCategoryOptionMixWithOthers;
+        AVAudioSessionMode modeToRestore = _audioSessionStateSaved ? _savedAudioMode : AVAudioSessionModeDefault;
+
         NSError *categoryError = nil;
-        BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayback
-                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
+        BOOL categoryConfigured = [sessionInstance setCategory:categoryToRestore
+                                                   withOptions:optionsToRestore
                                                          error:&categoryError];
         if (!categoryConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session category: %@", categoryError]];
         }
 
         NSError *modeError = nil;
-        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeDefault error:&modeError];
+        BOOL modeConfigured = [sessionInstance setMode:modeToRestore error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session mode: %@", modeError]];
         }
-        [self logMessage:@"teardownAudioSession: audio session reset to Playback/MixWithOthers/Default"];
+        [self logMessage:[NSString stringWithFormat:@"teardownAudioSession: audio session restored to %@/%@ (options: %lu)", categoryToRestore, modeToRestore, (unsigned long)optionsToRestore]];
+
+        // Clear the saved state so the next call captures a fresh snapshot.
+        _audioSessionStateSaved = NO;
+        _savedAudioCategory = nil;
+        _savedAudioMode = nil;
+        _savedAudioCategoryOptions = 0;
     }
     @catch (NSException *exception) {
         [self logMessage:@"Unknown error returned from teardownAudioSession"];
