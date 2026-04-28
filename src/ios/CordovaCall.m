@@ -129,8 +129,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
         NSError *categoryError = nil;
         BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
-                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                                                              | AVAudioSessionCategoryOptionAllowBluetooth
+                                                   withOptions: AVAudioSessionCategoryOptionAllowBluetooth
                                                               | AVAudioSessionCategoryOptionAllowAirPlay
                                                               | AVAudioSessionCategoryOptionAllowBluetoothA2DP
                                                          error:&categoryError];
@@ -139,7 +138,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
 
         NSError *modeError = nil;
-        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeVoiceChat error:&modeError];
+        BOOL modeConfigured = [sessionInstance setMode:hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat
+                                     error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
         }
@@ -1335,7 +1335,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
 }
 
-#define PushKit Delegate Methods
+#pragma mark PushKit Delegate Methods
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type{
     if([credentials.token length] == 0) {
         [self logMessage:@"No device token!"];
