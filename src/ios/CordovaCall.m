@@ -32,6 +32,12 @@ NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
 
+// Saved audio session state captured before setupAudioSession; restored in teardownAudioSession.
+AVAudioSessionCategory _savedAudioCategory;
+AVAudioSessionMode _savedAudioMode;
+AVAudioSessionCategoryOptions _savedAudioCategoryOptions = 0;
+BOOL _audioSessionStateSaved = NO;
+
 NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)pluginInitialize
@@ -127,10 +133,21 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     @try {
         AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+
+        // Capture the host app's audio session state the first time we configure it for a call,
+        // so teardownAudioSession can restore exactly what was there before.
+        @synchronized(self) {
+            if (!_audioSessionStateSaved) {
+                _savedAudioCategory = sessionInstance.category;
+                _savedAudioMode = sessionInstance.mode;
+                _savedAudioCategoryOptions = sessionInstance.categoryOptions;
+                _audioSessionStateSaved = YES;
+            }
+        }
+
         NSError *categoryError = nil;
         BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
-                                                   withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                                                              | AVAudioSessionCategoryOptionAllowBluetooth
+                                                   withOptions: AVAudioSessionCategoryOptionAllowBluetooth
                                                               | AVAudioSessionCategoryOptionAllowAirPlay
                                                               | AVAudioSessionCategoryOptionAllowBluetoothA2DP
                                                          error:&categoryError];
@@ -139,13 +156,50 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
 
         NSError *modeError = nil;
-        BOOL modeConfigured = [sessionInstance setMode:AVAudioSessionModeVoiceChat error:&modeError];
+        BOOL modeConfigured = [sessionInstance setMode:hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat
+                                     error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
         }
     }
     @catch (NSException *exception) {
         [self logMessage:@"Unknown error returned from setupAudioSession"];
+    }
+}
+
+- (void)teardownAudioSession
+{
+    @try {
+        AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+
+        // Restore whatever category/options/mode the host app had before the call began.
+        AVAudioSessionCategory categoryToRestore = _audioSessionStateSaved ? _savedAudioCategory : AVAudioSessionCategoryPlayback;
+        AVAudioSessionCategoryOptions optionsToRestore = _audioSessionStateSaved ? _savedAudioCategoryOptions : AVAudioSessionCategoryOptionMixWithOthers;
+        AVAudioSessionMode modeToRestore = _audioSessionStateSaved ? _savedAudioMode : AVAudioSessionModeDefault;
+
+        NSError *categoryError = nil;
+        BOOL categoryConfigured = [sessionInstance setCategory:categoryToRestore
+                                                   withOptions:optionsToRestore
+                                                         error:&categoryError];
+        if (!categoryConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session category: %@", categoryError]];
+        }
+
+        NSError *modeError = nil;
+        BOOL modeConfigured = [sessionInstance setMode:modeToRestore error:&modeError];
+        if (!modeConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to reset audio session mode: %@", modeError]];
+        }
+        [self logMessage:[NSString stringWithFormat:@"teardownAudioSession: audio session restored to %@/%@ (options: %lu)", categoryToRestore, modeToRestore, (unsigned long)optionsToRestore]];
+
+        // Clear the saved state so the next call captures a fresh snapshot.
+        _audioSessionStateSaved = NO;
+        _savedAudioCategory = nil;
+        _savedAudioMode = nil;
+        _savedAudioCategoryOptions = 0;
+    }
+    @catch (NSException *exception) {
+        [self logMessage:@"Unknown error returned from teardownAudioSession"];
     }
 }
 
@@ -904,6 +958,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self rejectPendingCommandsForSessionId:sessionId];
         [self.activeCalls removeObjectForKey:sessionId];
     }
+
+    // Once all calls have ended, reset the audio session to a mixing-friendly state
+    // so subsequent media playback behaves normally and getAudioRoute reflects reality.
+    if (self.callController.callObserver.calls.count == 0) {
+        [self teardownAudioSession];
+    }
 }
 
 - (void)provider:(CXProvider *)provider performAnswerCallAction:(CXAnswerCallAction *)action
@@ -1335,7 +1395,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.VoIPPushCallbackId];
 }
 
-#define PushKit Delegate Methods
+#pragma mark PushKit Delegate Methods
 - (void)pushRegistry:(PKPushRegistry *)registry didUpdatePushCredentials:(PKPushCredentials *)credentials forType:(PKPushType)type{
     if([credentials.token length] == 0) {
         [self logMessage:@"No device token!"];
