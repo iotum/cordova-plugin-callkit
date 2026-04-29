@@ -29,7 +29,6 @@ import java.util.HashMap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
 import android.util.Log;
-import android.view.WindowManager;
 import android.widget.Toast;
 
 public class CordovaCall extends CordovaPlugin {
@@ -121,22 +120,6 @@ public class CordovaCall extends CordovaPlugin {
         PhoneAccountManager.getPhoneAccount(context); // Ensure PhoneAccount is created and registered if not already
 
         this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
-
-        Activity activity = cordova.getActivity();
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    activity.setShowWhenLocked(true);
-                    activity.setTurnScreenOn(true);
-                } else {
-                    activity.getWindow().addFlags(
-                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                    );
-                }
-            }
-        });
 
         // Initialize AudioManager for audio route change monitoring
         this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
