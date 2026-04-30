@@ -284,7 +284,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"receiveCall"];
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callName = [command.arguments objectAtIndex:0];
+    if (![callName isKindOfClass:[NSString class]] || [callName length] == 0) {
+        callName = nil;
+    }
     NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
+    if (callId == nil) {
+        callId = @"Unknown";
+    }
     NSString* sessionId = [command.arguments objectAtIndex:2];
     // We must always be provided a sessionId because we need to identify the call
     if (sessionId == nil) {
@@ -304,50 +310,52 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
 
-    if (callName != nil && [callName length] > 0) {
-        CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
-        CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
-        callUpdate.remoteHandle = handle;
-        callUpdate.hasVideo = hasVideo;
-        callUpdate.localizedCallerName = callName;
-        callUpdate.supportsGrouping = NO;
-        callUpdate.supportsUngrouping = NO;
-        callUpdate.supportsHolding = YES;
-        callUpdate.supportsDTMF = enableDTMF;
-        [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
-            if(error == nil) {
-                // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
-                // end the call immediately now that CallKit has registered it.
-                // This prevents the dismiss being silently dropped during cold launch.
-                if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
-                    [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
-                    [self _dismissRingingCall:sessionId];
-                } else {
-                    [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
-                }
+    CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
+    CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+    callUpdate.remoteHandle = handle;
+    callUpdate.hasVideo = hasVideo;
+    callUpdate.localizedCallerName = callName;
+    callUpdate.supportsGrouping = NO;
+    callUpdate.supportsUngrouping = NO;
+    callUpdate.supportsHolding = YES;
+    callUpdate.supportsDTMF = enableDTMF;
+    [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
+        if(error == nil) {
+            // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
+            // end the call immediately now that CallKit has registered it.
+            // This prevents the dismiss being silently dropped during cold launch.
+            if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
+                [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
+                [self _dismissRingingCall:sessionId];
             } else {
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
-                return;
+                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
             }
-        }];
-        for (id callbackId in callbackIds[@"receiveCall"]) {
-            CDVPluginResult* pluginResult = nil;
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
-            [pluginResult setKeepCallbackAsBool:YES];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        } else {
+            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
+            return;
         }
-    } else {
-        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Caller id can't be empty"] callbackId:command.callbackId];
+    }];
+    for (id callbackId in callbackIds[@"receiveCall"]) {
+        CDVPluginResult* pluginResult = nil;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
+        [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
 }
 
 - (void)sendCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"sendCall"];
-    BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callName = [command.arguments objectAtIndex:0];
-    NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
+    if (![callName isKindOfClass:[NSString class]] || [callName length] == 0) {
+        callName = nil;
+    }
+    BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
+    NSString* callId = hasId ? [command.arguments objectAtIndex:1] : callName;
+    if (callId == nil) {
+        callId = @"Unknown";
+    }
     NSString* sessionId = [command.arguments objectAtIndex:2];
     NSUUID *callUUID = [[NSUUID alloc] init];
     self.activeCalls[sessionId] = [self newActiveCallEntryWithUUID:callUUID];
@@ -357,22 +365,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
 
-    if (callName != nil && [callName length] > 0) {
-        CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
-        CXStartCallAction *startCallAction = [[CXStartCallAction alloc] initWithCallUUID:callUUID handle:handle];
-        startCallAction.contactIdentifier = callName;
-        startCallAction.video = hasVideo;
-        CXTransaction *transaction = [[CXTransaction alloc] initWithAction:startCallAction];
-        [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"sendCall" } mutableCopy];
-            } else {
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
-            }
-        }];
-    } else {
-        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"The caller id can't be empty"] callbackId:command.callbackId];
-    }
+    CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
+    CXStartCallAction *startCallAction = [[CXStartCallAction alloc] initWithCallUUID:callUUID handle:handle];
+    startCallAction.contactIdentifier = callName;
+    startCallAction.video = hasVideo;
+    CXTransaction *transaction = [[CXTransaction alloc] initWithAction:startCallAction];
+    [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+        if (error == nil) {
+            self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"sendCall" } mutableCopy];
+        } else {
+            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
+        }
+    }];
 }
 
 - (void)connectCall:(CDVInvokedUrlCommand*)command
@@ -396,6 +400,36 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call connected successfully"];
     } else {
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for you to connect"];
+    }
+
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)updateCallDetails:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"updateCallDetails"];
+    NSString* sessionId = [command.arguments objectAtIndex:0];
+    id callNameArg = [command.arguments objectAtIndex:1];
+    NSString* callName = ([callNameArg isKindOfClass:[NSString class]] && [callNameArg length] > 0) ? callNameArg : nil;
+    id callIdArg = [command.arguments objectAtIndex:2];
+    NSString* callId = [callIdArg isKindOfClass:[NSString class]] ? callIdArg : nil;
+    CXCall *call = [self callForSessionId:sessionId];
+    CDVPluginResult* pluginResult = nil;
+
+    if (call && (callName || callId)) {
+        CXCallUpdate *update = [[CXCallUpdate alloc] init];
+        if (callName) {
+            update.localizedCallerName = callName;
+        }
+        if (callId) {
+            update.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
+        }
+        [self.provider reportCallWithUUID:call.UUID updated:update];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call details updated successfully"];
+    } else if (!call) {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for the given sessionId"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"callName or callId must be provided"];
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -1136,10 +1170,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)_reportAndEndDummyCall {
     [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for malformed VoIP push"];
     NSUUID *dummyUUID = [[NSUUID alloc] init];
-    CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"unknown"];
+    CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"Unknown"];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = handle;
-    callUpdate.localizedCallerName = @"Unknown";
+    callUpdate.localizedCallerName = nil;
     [self.provider reportNewIncomingCallWithUUID:dummyUUID update:callUpdate completion:^(NSError * _Nullable error) {
         if (error != nil) {
             [self logMessage:[NSString stringWithFormat:@"_reportAndEndDummyCall: failed to report dummy incoming call: %@", error.localizedDescription]];
@@ -1466,8 +1500,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     id fromValue = [payloadObj valueForKey:@"from"];
-    NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : @"Unknown";
-    NSArray* args = [NSArray arrayWithObjects:from, [NSNull null], sessionId, nil];
+    NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : nil;
+    id callIdValue = [[[payloadObj valueForKey:@"cid"] componentsSeparatedByCharactersInSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]] componentsJoinedByString:@""];
+    NSString *callId = [callIdValue isKindOfClass:[NSString class]] ? callIdValue : nil;
+    NSArray* args = [NSArray arrayWithObjects:from, callId, sessionId, nil];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
     // Store URL and Call Id so they can be used for call Answer/Reject
