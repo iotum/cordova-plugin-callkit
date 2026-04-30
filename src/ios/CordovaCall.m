@@ -348,7 +348,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callId = hasId ? [command.arguments objectAtIndex:1] : callName;
-    if (callId == nil) {
+    if (![callId isKindOfClass:[NSString class]] || [callId length] == 0) {
         callId = @"Unknown";
     }
     NSString* sessionId = [command.arguments objectAtIndex:2];
@@ -1488,9 +1488,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     id fromValue = [payloadObj valueForKey:@"from"];
     NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : nil;
-    id callIdValue = [[[payloadObj valueForKey:@"cid"] componentsSeparatedByCharactersInSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]] componentsJoinedByString:@""];
-    NSString *callId = [callIdValue isKindOfClass:[NSString class]] ? callIdValue : nil;
-    NSArray* args = [NSArray arrayWithObjects:from, callId, sessionId, nil];
+    id cidValue = [payloadObj valueForKey:@"cid"];
+    NSString *callId = nil;
+    if ([cidValue isKindOfClass:[NSString class]]) {
+        NSString *sanitizedCallId = [[cidValue componentsSeparatedByCharactersInSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]] componentsJoinedByString:@""];
+        callId = sanitizedCallId.length > 0 ? sanitizedCallId : nil;
+    }
+    NSArray* args = @[from ?: [NSNull null], callId ?: [NSNull null], sessionId];
     CDVInvokedUrlCommand* newCommand = [[CDVInvokedUrlCommand alloc] initWithArguments:args callbackId:@"" className:self.VoIPPushClassName methodName:self.VoIPPushMethodName];
 
     // Store URL and Call Id so they can be used for call Answer/Reject
