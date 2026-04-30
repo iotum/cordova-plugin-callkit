@@ -363,6 +363,25 @@ public class CordovaCall extends CordovaPlugin {
             }
             callbackContext.success();
             return true;
+        } else if (action.equals("updateCallDetails")) {
+            String sessionId = args.getString(0);
+            String callName = args.isNull(1) ? null : args.getString(1);
+            String callId = args.isNull(2) ? null : args.getString(2);
+            Connection conn = MyConnectionService.getConnection(sessionId);
+            if (conn == null) {
+                this.callbackContext.success("No call exists for the given sessionId");
+            } else if (callName == null && callId == null) {
+                this.callbackContext.error("callName or callId must be provided");
+            } else {
+                if (callName != null) {
+                    conn.setCallerDisplayName(callName, TelecomManager.PRESENTATION_ALLOWED);
+                }
+                if (callId != null) {
+                    conn.setAddress(Uri.fromParts("tel", callId, null), TelecomManager.PRESENTATION_ALLOWED);
+                }
+                this.callbackContext.success("Call details updated successfully");
+            }
+            return true;
         }
         return false;
     }
