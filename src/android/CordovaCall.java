@@ -122,22 +122,6 @@ public class CordovaCall extends CordovaPlugin {
 
         this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
-        Activity activity = cordova.getActivity();
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    activity.setShowWhenLocked(true);
-                    activity.setTurnScreenOn(true);
-                } else {
-                    activity.getWindow().addFlags(
-                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                    );
-                }
-            }
-        });
-
         // Initialize AudioManager for audio route change monitoring
         this.audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 
@@ -166,6 +150,37 @@ public class CordovaCall extends CordovaPlugin {
 
     public static void unregisterMainActivityStateChangeListener(Runnable runnable) {
         mainActivityForegroundListeners.remove(runnable);
+    }
+
+    /**
+     * Makes the MainActivity visible on the lockscreen and brings it to the foreground.
+     * Call this when the user answers a call from the IncomingCallActivity so they land in
+     * the app without having to first dismiss the lockscreen.
+     */
+    public static void showMainActivityOnLockscreen() {
+        CordovaInterface cordova = CordovaCall.getCordova();
+        if (cordova == null) return;
+        Activity activity = cordova.getActivity();
+        if (activity == null) return;
+
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    activity.setShowWhenLocked(true);
+                    activity.setTurnScreenOn(true);
+                } else {
+                    activity.getWindow().addFlags(
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    );
+                }
+
+                Intent launchIntent = new Intent(activity, activity.getClass());
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(launchIntent);
+            }
+        });
     }
 
     @Override
