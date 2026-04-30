@@ -80,7 +80,6 @@ class CallConnection extends Connection {
 
     void updatePeerName(String newPeerName) {
         this.peerName = newPeerName;
-        setCallerDisplayName(newPeerName, android.telecom.TelecomManager.PRESENTATION_ALLOWED);
         CallAudioService.updateNotification(service.getApplicationContext(), newPeerName, this.sessionId);
     }
 

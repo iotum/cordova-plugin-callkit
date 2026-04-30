@@ -78,6 +78,12 @@ class IncomingCallConnection extends CallConnection {
     }
 
     @Override
+    void updatePeerName(String newPeerName) {
+        super.updatePeerName(newPeerName);
+        setCallerDisplayName(newPeerName, android.telecom.TelecomManager.PRESENTATION_ALLOWED);
+    }
+
+    @Override
     public void onStateChanged(int state) {
         if (state == Connection.STATE_ACTIVE) {
             // For an incoming call specifically, we wait for the connection to be ACTIVE as this would
