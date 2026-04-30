@@ -348,7 +348,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     BOOL hasId = ![[command.arguments objectAtIndex:1] isEqual:[NSNull null]];
     NSString* callId = hasId ? [command.arguments objectAtIndex:1] : callName;
-    if (callId == nil) {
+    if (![callId isKindOfClass:[NSString class]] || [callId length] == 0) {
         callId = @"Unknown";
     }
     NSString* sessionId = [command.arguments objectAtIndex:2];
