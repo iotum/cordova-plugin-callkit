@@ -244,6 +244,8 @@ public class IncomingCallActivity extends AppCompatActivity {
         answerIntent.putExtra("fromLockscreen", true);
         this.sendBroadcast(answerIntent);
 
+        CordovaCall.showMainActivityOnLockscreen();
+
         this.finishAndRemoveTask();
     }
 
