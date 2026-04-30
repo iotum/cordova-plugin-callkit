@@ -78,6 +78,12 @@ class CallConnection extends Connection {
         LocalBroadcastManager.getInstance(service.getApplicationContext()).sendBroadcast(intent);
     }
 
+    void updatePeerName(String newPeerName) {
+        this.peerName = newPeerName;
+        setCallerDisplayName(newPeerName, android.telecom.TelecomManager.PRESENTATION_ALLOWED);
+        CallAudioService.updateNotification(service.getApplicationContext(), newPeerName, this.sessionId);
+    }
+
     protected void startCallAudioService() {
         // NOTE: CallAudioService should be started before mic access, in order to work.
         // IMPORTANT: This preserves the ability to use the mic when the app is in the background!

@@ -374,7 +374,7 @@ public class CordovaCall extends CordovaPlugin {
             if (conn == null) {
                 this.callbackContext.success("No call exists for the given sessionId");
             } else {
-                conn.setCallerDisplayName(callName, TelecomManager.PRESENTATION_ALLOWED);
+                conn.updatePeerName(callName);
                 this.callbackContext.success("Call name updated successfully");
             }
             return true;
