@@ -395,31 +395,28 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
-- (void)updateCallDetails:(CDVInvokedUrlCommand*)command
+- (void)updateCallName:(CDVInvokedUrlCommand*)command
 {
-    [self logMessage:@"updateCallDetails"];
+    [self logMessage:@"updateCallName"];
     NSString* sessionId = [command.arguments objectAtIndex:0];
     id callNameArg = [command.arguments objectAtIndex:1];
     NSString* callName = ([callNameArg isKindOfClass:[NSString class]] && [callNameArg length] > 0) ? callNameArg : nil;
-    id callIdArg = [command.arguments objectAtIndex:2];
-    NSString* callId = [callIdArg isKindOfClass:[NSString class]] ? callIdArg : nil;
-    CXCall *call = [self callForSessionId:sessionId];
     CDVPluginResult* pluginResult = nil;
 
-    if (call && (callName || callId)) {
+    if (!callName) {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No callName provided, nothing to update"];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        return;
+    }
+
+    CXCall *call = [self callForSessionId:sessionId];
+    if (call) {
         CXCallUpdate *update = [[CXCallUpdate alloc] init];
-        if (callName) {
-            update.localizedCallerName = callName;
-        }
-        if (callId) {
-            update.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
-        }
+        update.localizedCallerName = callName;
         [self.provider reportCallWithUUID:call.UUID updated:update];
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call details updated successfully"];
-    } else if (!call) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for the given sessionId"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Call name updated successfully"];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"callName or callId must be provided"];
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"No call exists for the given sessionId"];
     }
 
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
