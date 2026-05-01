@@ -373,8 +373,8 @@ public class CordovaCall extends CordovaPlugin {
             Connection conn = MyConnectionService.getConnection(sessionId);
             if (conn == null) {
                 this.callbackContext.success("No call exists for the given sessionId");
-            } else {
-                conn.updatePeerName(callName);
+            } else if (conn instanceof CallConnection) {
+                ((CallConnection) conn).updatePeerName(callName);
                 this.callbackContext.success("Call name updated successfully");
             }
             return true;
