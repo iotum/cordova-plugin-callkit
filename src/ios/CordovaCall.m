@@ -4,6 +4,7 @@
 #import "WebSocketAdvanced.h"
 #import <SocketRocket/SocketRocket.h>
 #import <WebRTC/RTCAudioSession.h>
+#import <WebRTC/RTCAudioSessionConfiguration.h>
 
 @implementation CordovaCall
 
@@ -156,11 +157,29 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
 
         NSError *modeError = nil;
-        BOOL modeConfigured = [sessionInstance setMode:hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat
-                                     error:&modeError];
+        // AVAudioSessionModeVoiceChat enables iOS hardware AEC (via the Voice Processing I/O audio unit).
+        // WebRTC software AEC/AGC/NS is disabled via audioSourceWithConstraints in PluginGetUserMedia
+        // to prevent double-processing on top of the iOS hardware AEC.
+        AVAudioSessionMode targetMode = hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat;
+        BOOL modeConfigured = [sessionInstance setMode:targetMode error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
         }
+        [self logMessage:[NSString stringWithFormat:@"setupAudioSession: mode set to %@", targetMode]];
+
+        // Override the WebRTC audio session configuration so that when the native WebRTC layer
+        // configures the audio session at peer connection time (around connectCall), it uses
+        // our desired mode. cedeAudioSessionToCallKit=true stops iosrtc's own code from touching
+        // the session, but RTCAudioSessionConfiguration.webRTCConfiguration is still applied by
+        // libwebrtc internally — so we override it here to keep the mode consistent.
+        RTCAudioSessionConfiguration *webRTCConfig = [RTCAudioSessionConfiguration webRTCConfiguration];
+        webRTCConfig.category = AVAudioSessionCategoryPlayAndRecord;
+        webRTCConfig.categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth
+                                     | AVAudioSessionCategoryOptionAllowAirPlay
+                                     | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+        webRTCConfig.mode = targetMode;  // AVAudioSessionMode is NSString* in ObjC, no .rawValue needed
+        [RTCAudioSessionConfiguration setWebRTCConfiguration:webRTCConfig];
+        [self logMessage:[NSString stringWithFormat:@"setupAudioSession: RTCAudioSessionConfiguration updated to mode=%@", targetMode]];
     }
     @catch (NSException *exception) {
         [self logMessage:@"Unknown error returned from setupAudioSession"];
@@ -671,31 +690,48 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)handleAudioRouteChange:(NSNotification *) notification
 {
+    // AVAudioSessionRouteChangeNotification is delivered on an internal AVAudioSession background
+    // thread. Dispatch to the main thread so that route-change handling is serialized with UI
+    // callbacks (which also run on the main thread).
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self handleAudioRouteChange:notification];
+        });
+        return;
+    }
+
     if(monitorAudioRouteChange) {
         NSNumber* reasonValue = notification.userInfo[AVAudioSessionRouteChangeReasonKey];
         int reason = [reasonValue intValue];
 
-        // Filter out unimportant route changes
-        if (reason == AVAudioSessionRouteChangeReasonUnknown || reason == AVAudioSessionRouteChangeReasonWakeFromSleep || reason == AVAudioSessionRouteChangeReasonRouteConfigurationChange) {
+        // Filter out truly unimportant route changes
+        if (reason == AVAudioSessionRouteChangeReasonUnknown || reason == AVAudioSessionRouteChangeReasonWakeFromSleep) {
             return;
         }
 
         AVAudioSessionRouteDescription* previousRouteKey = notification.userInfo[AVAudioSessionRouteChangePreviousRouteKey];
         AVAudioSessionRouteDescription* currentRoute = [[AVAudioSession sharedInstance] currentRoute];
 
-        // Get current output type
-        NSString* currentOutputType = @"Unknown";
+        NSString* currentOutputType = ([currentRoute.outputs count] > 0) ? [currentRoute.outputs[0] portType] : @"Unknown";
+        NSString* prevOutputType = ([previousRouteKey.outputs count] > 0) ? [previousRouteKey.outputs[0] portType] : @"Unknown";
         NSString* reasonString = [self getRouteChangeReasonString:reason];
 
-        if([currentRoute.outputs count] > 0) {
-            currentOutputType = [currentRoute.outputs[0] portType];
-        }
+        // Always log every route change so we can diagnose reverts even when monitoring is off.
+        [self logMessage:[NSString stringWithFormat:@"audioRouteChange: %@ → %@ (reason: %@, monitorActive=%d, category=%@, mode=%@)",
+            prevOutputType, currentOutputType, reasonString,
+            monitorAudioRouteChange,
+            [AVAudioSession sharedInstance].category,
+            [AVAudioSession sharedInstance].mode]];
 
-        NSArray* outputs = [previousRouteKey outputs];
-        if([outputs count] > 0) {
-            AVAudioSessionPortDescription *output = outputs[0];
+        if([previousRouteKey.outputs count] > 0) {
+            AVAudioSessionPortDescription *output = previousRouteKey.outputs[0];
 
-            // Legacy speakerOn/speakerOff events for backward compatibility
+            // Track speaker state based on user-initiated Override events (covers CallKit UI speaker button).
+            // Only do this during an active call (monitorAudioRouteChange=YES) so that system-teardown
+            // Override notifications after performEndCallAction don't incorrectly re-activate speaker state.
+            // Emit legacy speakerOn/speakerOff events unconditionally so JS always learns of
+            // route changes regardless of whether monitorAudioRouteChange is set. The monitoring
+            // flag only gates speaker-tracking — not event delivery.
             if(![output.portType isEqual:AVAudioSessionPortBuiltInSpeaker] && [currentOutputType isEqual:AVAudioSessionPortBuiltInSpeaker]) {
                 for (id callbackId in callbackIds[@"speakerOn"]) {
                     CDVPluginResult* pluginResult = nil;
@@ -713,7 +749,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
         }
 
-        // Enhanced audioRouteChange event with comprehensive information
+        // Always emit audioRouteChange to JS listeners — not gated by monitorAudioRouteChange.
+        // performEndCallAction clears the flag immediately (to prevent teardown events from
+        // triggering speaker-polling logic), but concurrent or overlapping calls may still be
+        // active and JS needs to stay informed about route changes.
         NSDictionary *routeChangeData = @{
             @"reason": reasonValue,
             @"reasonString": reasonString,
@@ -851,7 +890,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
-    [self logMessage:@"activated audio"];
+    NSString *routeOnActivate = ([[AVAudioSession sharedInstance].currentRoute.outputs count] > 0)
+        ? [AVAudioSession sharedInstance].currentRoute.outputs[0].portType : @"none";
+    [self logMessage:[NSString stringWithFormat:@"didActivateAudioSession: route=%@, category=%@, mode=%@",
+        routeOnActivate,
+        [AVAudioSession sharedInstance].category,
+        [AVAudioSession sharedInstance].mode]];
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     monitorAudioRouteChange = YES;
@@ -904,7 +948,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
-    [self logMessage:@"deactivated audio"];
+    NSString *routeOnDeactivate = ([[AVAudioSession sharedInstance].currentRoute.outputs count] > 0)
+        ? [AVAudioSession sharedInstance].currentRoute.outputs[0].portType : @"none";
+    [self logMessage:[NSString stringWithFormat:@"didDeactivateAudioSession: route=%@",
+        routeOnDeactivate]];
     [RTCAudioSession sharedInstance].isAudioEnabled = NO;
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
