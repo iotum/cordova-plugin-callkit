@@ -1,6 +1,7 @@
 package com.dmarc.cordovacall;
 
 import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -18,6 +19,18 @@ import androidx.core.app.ServiceCompat;
  */
 public class CallAudioService extends Service {
     private static final String TAG = "CallAudioService";
+    private static int currentNotificationId = -1;
+
+    public static int getCurrentNotificationId() {
+        return currentNotificationId;
+    }
+
+    public static void updateNotification(Context context, String peerName, String sessionId) {
+        if (currentNotificationId == -1) return;
+        Notification updated = new OngoingCallNotification(context, peerName, sessionId).build();
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        nm.notify(currentNotificationId, updated);
+    }
 
     // onStartCommand is called in response to the startService() intent
     @Override
@@ -39,6 +52,7 @@ public class CallAudioService extends Service {
 
         Notification notification = onGoingCallNotification.build();
         int notificationID = onGoingCallNotification.getNotificationID();
+        currentNotificationId = notificationID;
 
         // For Android 14 (API 34) and above, you MUST specify types in code
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -69,6 +83,8 @@ public class CallAudioService extends Service {
     @Override
     public void onDestroy() {
         Log.d(TAG, "onDestroy()");
+
+        currentNotificationId = -1;
 
         Log.d(TAG, "Returning audio mode to MODE_NORMAL");
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);

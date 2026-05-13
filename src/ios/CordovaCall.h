@@ -19,6 +19,7 @@
 
 - (void)updateProviderConfig;
 - (void)setupAudioSession;
+- (void)teardownAudioSession;
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command;
 - (void)setIcon:(CDVInvokedUrlCommand*)command;
@@ -30,6 +31,7 @@
 - (void)receiveCall:(CDVInvokedUrlCommand*)command;
 - (void)sendCall:(CDVInvokedUrlCommand*)command;
 - (void)connectCall:(CDVInvokedUrlCommand*)command;
+- (void)updateCallName:(CDVInvokedUrlCommand*)command;
 - (void)endCall:(CDVInvokedUrlCommand*)command;
 - (void)registerEvent:(CDVInvokedUrlCommand*)command;
 - (void)mute:(CDVInvokedUrlCommand*)command;

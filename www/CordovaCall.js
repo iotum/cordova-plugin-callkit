@@ -83,6 +83,10 @@ exports.connectCall = function (sessionId, recentsSessionId, success, error) {
   exec(success, error, "CordovaCall", "connectCall", [sessionId, recentsSessionId || null]);
 };
 
+exports.updateCallName = function (sessionId, callName, success, error) {
+  exec(success, error, "CordovaCall", "updateCallName", [sessionId, callName || null]);
+};
+
 exports.endCall = function (sessionId, success, error) {
   exec(success, error, "CordovaCall", "endCall", [sessionId]);
 };

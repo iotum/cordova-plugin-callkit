@@ -58,6 +58,7 @@ class IncomingCallConnection extends CallConnection {
     public void onReject() {
         Log.d(MyConnectionService.TAG, "onReject, call_uuid: " + callUUID);
         this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
+        this.destroy();
 
         service.showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
 
@@ -74,6 +75,12 @@ class IncomingCallConnection extends CallConnection {
     public void onDisconnect() {
         Log.d(MyConnectionService.TAG, "onDisconnect, call_uuid: " + callUUID);
         super.onDisconnect();
+    }
+
+    @Override
+    void updatePeerName(String newPeerName) {
+        super.updatePeerName(newPeerName);
+        setCallerDisplayName(newPeerName, android.telecom.TelecomManager.PRESENTATION_ALLOWED);
     }
 
     @Override

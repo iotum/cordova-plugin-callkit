@@ -28,6 +28,9 @@ public class MyConnectionService extends ConnectionService {
     static final String TAG = "MyConnectionService";
     static final ConcurrentHashMap<String, Connection> connectionMap = new ConcurrentHashMap<String, Connection>(); // Keys are session id strings
     private static final ConcurrentHashMap<String, Boolean> connectionAddedMap = new ConcurrentHashMap<String, Boolean>(); // Keys are call_uuid strings, true if addIncomingCall called for the given call uuid.
+    // Tracks sessions for which a dismiss was received before the connection was added to connectionMap.
+    // When onCreateIncomingConnection fires for such a session, the connection is immediately aborted.
+    private static final ConcurrentHashMap<String, Boolean> pendingDismissals = new ConcurrentHashMap<String, Boolean>();
 
     private CallActionReceiver callActionReceiver;
 
@@ -80,13 +83,35 @@ public class MyConnectionService extends ConnectionService {
 
                 Connection conn = connectionMap.get(sessionId);
                 if (conn == null) {
-                    Log.e(TAG, "Cannot disconnect. No connection found with call_uuid: " + callUUID);
+                    if (Boolean.TRUE.equals(connectionAddedMap.get(callUUID))) {
+                        // A dismiss can legitimately arrive before onCreateIncomingConnection adds the
+                        // connection to connectionMap. Only record a pending dismissal when there is
+                        // separate evidence that an incoming call for this call_uuid is actually pending.
+                        Log.w(TAG, "No connection found for dismiss, recording pending dismissal. call_uuid: " + callUUID + ", sessionId: " + sessionId);
+                        pendingDismissals.put(sessionId, true);
+                    } else {
+                        // connectionMap can also be missing because the call already disconnected and
+                        // was removed, or because this is a duplicate/late dismiss push. Do not record
+                        // a pending dismissal in those cases, since that can leak entries and affect a
+                        // future call if sessionId is reused.
+                        Log.w(TAG, "No connection found for dismiss and no pending incoming call is tracked; ignoring dismiss. call_uuid: "
+                                + callUUID + ", sessionId: " + sessionId);
+                    }
                 } else {
-                    if (conn.getState() == Connection.STATE_DISCONNECTED) {
+                    int state = conn.getState();
+                    if (state == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
-                    } else if (conn.getState() == Connection.STATE_RINGING) {
-                        Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, call_uuid: " + callUUID);
+                    } else if (state == Connection.STATE_NEW || state == Connection.STATE_RINGING) {
+                        // Only abort pre-answer states. STATE_NEW covers the brief window between
+                        // onCreateIncomingConnection returning and onShowIncomingCallUi calling
+                        // setRinging(). Do not abort STATE_ACTIVE or STATE_HOLDING — a late-arriving
+                        // dismiss for an already-answered call must not disconnect the live call.
+                        Log.d(TAG, "Calling connection.onAbort() in response to pushMessagePayload.dismiss, state: "
+                                + Connection.stateToString(state) + ", call_uuid: " + callUUID);
                         conn.onAbort();
+                    } else {
+                        Log.d(TAG, "Ignoring dismiss for connection in non-ringing state: "
+                                + Connection.stateToString(state) + ", call_uuid: " + callUUID);
                     }
                 }
             } else {
@@ -219,35 +244,50 @@ public class MyConnectionService extends ConnectionService {
         }
         final String callUUID = _callUUID;
 
-        String callerName = payload.optString("from", "UNKNOWN CALLER");
-
-        connectionAddedMap.remove(callUUID);
-
-        String sessionId = null;
+        // Ensure the connectionAddedMap entry is always removed once callUUID is known,
+        // even if an exception is thrown later in this method.
         try {
-            sessionId = payload.getString("session_id");
-        } catch (JSONException e) {
-            throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
+            String callerName = payload.optString("from", "UNKNOWN CALLER");
+
+            String sessionId = null;
+            try {
+                sessionId = payload.getString("session_id");
+            } catch (JSONException e) {
+                throw new RuntimeException("onCreateIncomingConnection: no session_id in payload, unable to create IncomingCallConnection");
+            }
+            final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
+
+            connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
+
+            Icon icon = CordovaCall.getIcon();
+            if(icon != null) {
+                StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
+                connection.setStatusHints(statusHints);
+            }
+
+            Log.d(TAG, "Created connection for callUUID: " + callUUID);
+            connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+
+            Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
+            connectionMap.put(sessionId, connection);
+
+            // If a dismiss was received before this connection was created, abort it immediately.
+            if (pendingDismissals.remove(sessionId) != null) {
+                Log.w(TAG, "Pending dismissal found for sessionId: " + sessionId + ", aborting connection immediately.");
+                connection.onAbort();
+                return connection;
+            }
+
+            CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
+
+            return connection;
+        } finally {
+            // Deferred until after connectionMap.put so a dismiss arriving between addNewIncomingCall
+            // and connectionMap.put still finds the entry and is recorded as a pending dismissal.
+            // The finally block guarantees cleanup even if an exception is thrown, preventing the
+            // entry from leaking and blocking future calls for the same call_uuid.
+            connectionAddedMap.remove(callUUID);
         }
-        final IncomingCallConnection connection = new IncomingCallConnection(this, callUUID, payloadString, callerName, sessionId);
-
-        connection.setCallerDisplayName(callerName, TelecomManager.PRESENTATION_ALLOWED);
-
-        Icon icon = CordovaCall.getIcon();
-        if(icon != null) {
-            StatusHints statusHints = new StatusHints((CharSequence)"", icon, new Bundle());
-            connection.setStatusHints(statusHints);
-        }
-
-        Log.d(TAG, "Created connection for callUUID: " + callUUID);
-        connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
-
-        Log.d(TAG, "Adding IncomingCallConnection to connectionMap, sessionId: " + sessionId);
-        connectionMap.put(sessionId, connection);
-
-        CordovaCall.emitEvent("receiveCall", new PluginResult(PluginResult.Status.OK, "receiveCall event called successfully"));
-
-        return connection;
     }
 
     @Override
@@ -267,6 +307,10 @@ public class MyConnectionService extends ConnectionService {
             String callUUID = payload.getString("call_uuid");
             connectionAddedMap.remove(callUUID);
             Log.d(TAG, "Removed connectionAddedMap entry for failed incoming connection, callUUID: " + callUUID);
+            String sessionId = payload.optString("session_id", null);
+            if (sessionId != null) {
+                pendingDismissals.remove(sessionId);
+            }
         } catch (JSONException e) {
             Log.e(TAG, "onCreateIncomingConnectionFailed failed to parse payload: " + payloadString + ", error: " + e.getMessage());
         }

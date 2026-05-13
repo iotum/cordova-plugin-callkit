@@ -35,11 +35,17 @@ class CallConnection extends Connection {
     @Override
     public void onAbort() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+        // destroy() is called after setDisconnected() so the ConnectionService framework's own
+        // listener can send setDisconnected → removeCall to Telecom in the correct order first.
+        this.destroy();
     }
 
     @Override
     public void onDisconnect() {
         this.setDisconnected(new DisconnectCause(DisconnectCause.LOCAL));
+        // destroy() is called after setDisconnected() so the ConnectionService framework's own
+        // listener can send setDisconnected → removeCall to Telecom in the correct order first.
+        this.destroy();
         CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
     }
 
@@ -51,7 +57,6 @@ class CallConnection extends Connection {
         if (state == Connection.STATE_ACTIVE) {
             AudioRouteMonitor.onCallConnected();
         } else if (state == Connection.STATE_DISCONNECTED) {
-            this.destroy();
             AudioRouteMonitor.onCallEnded();
 
             if (!MyConnectionService.hasConnectionsRequiringAudioService()) {
@@ -71,6 +76,11 @@ class CallConnection extends Connection {
         intent.putExtra("sessionId", this.sessionId);
         intent.putExtra("state", state);
         LocalBroadcastManager.getInstance(service.getApplicationContext()).sendBroadcast(intent);
+    }
+
+    void updatePeerName(String newPeerName) {
+        this.peerName = newPeerName;
+        CallAudioService.updateNotification(service.getApplicationContext(), newPeerName, this.sessionId);
     }
 
     protected void startCallAudioService() {
