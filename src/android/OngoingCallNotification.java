@@ -39,6 +39,11 @@ public class OngoingCallNotification {
     }
 
     public Notification build() {
+        String safePeerName = peerName;
+        if (safePeerName == null || safePeerName.trim().isEmpty()) {
+            safePeerName = "unavailable";
+        }
+
         Intent hangupIntent = new Intent(this.context, CallActionReceiver.class);
         hangupIntent.setAction("hangUpCall");
         hangupIntent.putExtra("notificationID", this.notificationID);
@@ -59,7 +64,7 @@ public class OngoingCallNotification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating call-style notification for on-going call (as this is supported by the device)...");
             Person callerPerson = new Person.Builder()
-                    .setName(peerName)
+                    .setName(safePeerName)
                     .setImportant(true)
                     .build();
 
@@ -67,7 +72,7 @@ public class OngoingCallNotification {
             // NOTE: this requirement is met by the use of a foreground service
             builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(callerPerson, hangupPendingIntent));
         } else {
-            builder.setContentText(peerName);
+            builder.setContentText(safePeerName);
             builder.addAction(android.R.drawable.ic_menu_call, "Hang up", hangupPendingIntent);
         }
 
