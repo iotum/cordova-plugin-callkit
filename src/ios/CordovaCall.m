@@ -307,8 +307,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         callName = nil;
     }
     NSString* callId = hasId?[command.arguments objectAtIndex:1]:callName;
-    if (callId == nil) {
-        callId = @"Unknown";
+    if (![callId isKindOfClass:[NSString class]] || [callId length] == 0) {
+        callId = @"unavailable";
     }
     NSString* sessionId = [command.arguments objectAtIndex:2];
     // We must always be provided a sessionId because we need to identify the call
@@ -671,6 +671,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)receiveCallFromRecents:(NSNotification *) notification
 {
     NSString* callID = notification.object[@"callId"];
+    if (![callID isKindOfClass:[NSString class]] || [callID length] == 0) {
+        callID = @"unavailable";
+    }
     NSString* callName = notification.object[@"callName"];
     NSUUID *callUUID = [[NSUUID alloc] init];
     NSString *recentsSessionId = [NSString stringWithFormat:@"recents:%@", callID];
