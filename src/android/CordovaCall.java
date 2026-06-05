@@ -311,7 +311,7 @@ public class CordovaCall extends CordovaPlugin {
             this.callbackContext.success("Unmuted Successfully");
             return true;
         } else if (action.equals("setAllowUnmute")) {
-            callbackContext.error("setAllowUnmute is not supported on Android");
+            this.callbackContext.error("setAllowUnmute is not supported on Android");
             return true;
         } else if (action.equals("speakerOn")) {
             this.speakerOn();
