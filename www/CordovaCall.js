@@ -44,6 +44,14 @@ exports.setDTMFState = function (value, success, error) {
   }
 };
 
+exports.setAllowUnmute = function (sessionId, value, success, error) {
+  if (typeof value == "boolean") {
+    exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);
+  } else {
+    error("Value Must Be True Or False");
+  }
+};
+
 exports.setVideo = function (value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setVideo", [value]);

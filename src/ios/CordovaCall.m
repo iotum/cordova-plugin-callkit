@@ -289,6 +289,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)setAllowUnmute:(CDVInvokedUrlCommand*)command
+{
+    NSString *sessionId = [command.arguments objectAtIndex:0];
+    BOOL value = [[command.arguments objectAtIndex:1] boolValue];
+    CDVPluginResult *pluginResult = nil;
+    if (self.activeCalls[sessionId]) {
+        self.activeCalls[sessionId][@"allowUnmute"] = @(value);
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"allowUnmute Changed Successfully"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call for sessionId"];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)setVideo:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
@@ -1113,6 +1127,27 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     [self logMessage:[NSString stringWithFormat:@"CallKit performSetMutedCallAction received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
 
+    // If this is an unmute request and allowUnmute is NO for this session, fail the action.
+    BOOL allowUnmute = [self.activeCalls[sessionId][@"allowUnmute"] boolValue];
+    if (!isMuted && !allowUnmute) {
+        [self logMessage:@"performSetMutedCallAction: allowUnmute is NO, reject unmute action"];
+        // Failing the action will cause CallKit to revert the UI toggle back to "muted" state,
+        // which is the desired behavior when unmuting is disallowed.
+        NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString];
+        if (entry) {
+            // UI-initiated mute/unmute: emit to event listeners only.
+            [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:action.UUID.UUIDString];
+            NSString *cbId = entry[@"callbackId"];
+            if (cbId) {
+                NSDictionary *resultDict = @{ @"message": @"unmute not permitted", @"sessionId": sessionId };
+                CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
+                [self.commandDelegate sendPluginResult:result callbackId:cbId];
+            }
+        }
+        [action fail];
+        return;
+    }
+
     [action fulfill];
 
     if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
@@ -1224,7 +1259,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"callbackMap": [NSMutableDictionary dictionary],
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
-        @"pendingDismiss": @NO
+        @"pendingDismiss": @NO,
+        @"allowUnmute": @YES
     } mutableCopy];
 }
 
