@@ -1135,7 +1135,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // which is the desired behavior when unmuting is disallowed.
         NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString];
         if (entry) {
-            // UI-initiated mute/unmute: emit to event listeners only.
             [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:action.UUID.UUIDString];
             NSString *cbId = entry[@"callbackId"];
             if (cbId) {
