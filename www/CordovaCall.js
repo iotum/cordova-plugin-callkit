@@ -44,14 +44,6 @@ exports.setDTMFState = function (value, success, error) {
   }
 };
 
-exports.setAllowUnmute = function (sessionId, value, success, error) {
-  if (typeof value == "boolean") {
-    exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);
-  } else {
-    if (typeof error == "function") { error("Value Must Be True Or False"); }
-  }
-};
-
 exports.setVideo = function (value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setVideo", [value]);
@@ -161,6 +153,14 @@ exports.dismissRingingCall = function (sessionId, success) {
 exports.log = function (message) {
   exec(null, null, "CordovaCall", "log", [message]);
 }
+
+exports.setAllowUnmute = function (sessionId, value, success, error) {
+  if (typeof value == "boolean") {
+    exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);
+  } else {
+    if (typeof error == "function") { error("Value Must Be True Or False"); }
+  }
+};
 
 exports.keepAlive = function (callback) {
   exec(callback, null, "CordovaCall", "keepAlive", []);
