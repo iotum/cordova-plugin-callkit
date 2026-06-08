@@ -32,7 +32,7 @@ exports.setIncludeInRecents = function (value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setIncludeInRecents", [value]);
   } else {
-    error("Value Must Be True Or False");
+    if (typeof error == "function") { error("Value Must Be True Or False"); }
   }
 };
 
@@ -40,7 +40,7 @@ exports.setDTMFState = function (value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setDTMFState", [value]);
   } else {
-    error("Value Must Be True Or False");
+    if (typeof error == "function") { error("Value Must Be True Or False"); }
   }
 };
 
@@ -48,7 +48,7 @@ exports.setVideo = function (value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setVideo", [value]);
   } else {
-    error("Value Must Be True Or False");
+    if (typeof error == "function") { error("Value Must Be True Or False"); }
   }
 };
 
@@ -153,6 +153,14 @@ exports.dismissRingingCall = function (sessionId, success) {
 exports.log = function (message) {
   exec(null, null, "CordovaCall", "log", [message]);
 }
+
+exports.setAllowUnmute = function (sessionId, value, success, error) {
+  if (typeof value == "boolean") {
+    exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);
+  } else {
+    if (typeof error == "function") { error("Value Must Be True Or False"); }
+  }
+};
 
 exports.keepAlive = function (callback) {
   exec(callback, null, "CordovaCall", "keepAlive", []);

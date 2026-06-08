@@ -289,6 +289,20 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+- (void)setAllowUnmute:(CDVInvokedUrlCommand*)command
+{
+    NSString *sessionId = [command.arguments objectAtIndex:0];
+    BOOL value = [[command.arguments objectAtIndex:1] boolValue];
+    CDVPluginResult *pluginResult = nil;
+    if (self.activeCalls[sessionId]) {
+        self.activeCalls[sessionId][@"allowUnmute"] = @(value);
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"allowUnmute Changed Successfully"];
+    } else {
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No active call for sessionId"];
+    }
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
 - (void)setVideo:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
@@ -512,10 +526,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: %@", sessionId]];
+        // Pre-populate callbackMap before requestTransaction: performSetMutedCallAction fires
+        // before the requestTransaction completion block, so the entry must already be present.
+        self.activeCalls[sessionId][@"callbackMap"][muteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"mute" } mutableCopy];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                self.activeCalls[sessionId][@"callbackMap"][muteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"mute" } mutableCopy];
-            } else {
+            if (error != nil) {
+                // Transaction was rejected before reaching performSetMutedCallAction — clean up.
+                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:muteAction.UUID.UUIDString];
                 [self logMessage:@"Error occurred muting Call"];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -538,10 +555,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unmuting Call: %@", sessionId]];
+        // Pre-populate callbackMap before requestTransaction: performSetMutedCallAction fires
+        // before the requestTransaction completion block, so the entry must already be present.
+        self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unmute" } mutableCopy];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unmute" } mutableCopy];
-            } else {
+            if (error != nil) {
+                // Transaction was rejected before reaching performSetMutedCallAction — clean up.
+                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:unmuteAction.UUID.UUIDString];
                 [self logMessage:@"Error occurred unmuting Call"];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -1113,12 +1133,24 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     [self logMessage:[NSString stringWithFormat:@"CallKit performSetMutedCallAction received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
 
-    [action fulfill];
-
     if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
+        [action fulfill];
+
         // Programmatic mute/unmute: resolve the JS promise only.
         [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
+        return;
+    }
+
+    BOOL allowUnmute = [self.activeCalls[sessionId][@"allowUnmute"] boolValue];
+    if (!isMuted && !allowUnmute) {
+        // If this is an unmute request and allowUnmute is NO for this session, fail the action.
+        [action fail];
+
+        [self logMessage:@"performSetMutedCallAction: allowUnmute is NO, reject unmute action"];
+        return;
     } else {
+        [action fulfill];
+
         // UI-initiated mute/unmute: emit to event listeners only.
         for (id callbackId in callbackIds[isMuted ? @"mute" : @"unmute"]) {
             [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
@@ -1224,7 +1256,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"callbackMap": [NSMutableDictionary dictionary],
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
-        @"pendingDismiss": @NO
+        @"pendingDismiss": @NO,
+        @"allowUnmute": @YES
     } mutableCopy];
 }
 

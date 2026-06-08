@@ -26,6 +26,7 @@
 - (void)setRingtone:(CDVInvokedUrlCommand*)command;
 - (void)setIncludeInRecents:(CDVInvokedUrlCommand*)command;
 - (void)setDTMFState:(CDVInvokedUrlCommand*)command;
+- (void)setAllowUnmute:(CDVInvokedUrlCommand*)command;
 - (void)setVideo:(CDVInvokedUrlCommand*)command;
 
 - (void)receiveCall:(CDVInvokedUrlCommand*)command;
