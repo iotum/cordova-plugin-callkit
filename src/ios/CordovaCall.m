@@ -558,10 +558,14 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Pre-populate callbackMap before requestTransaction: performSetMutedCallAction fires
         // before the requestTransaction completion block, so the entry must already be present.
         self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unmute" } mutableCopy];
+        // Flag that a programmatic unmute is in flight so that any secondary performSetMutedCallAction
+        // invocations (CallKit occasionally fires the delegate twice) also bypass the allowUnmute guard.
+        self.activeCalls[sessionId][@"pendingProgrammaticUnmute"] = @YES;
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error != nil) {
                 // Transaction was rejected before reaching performSetMutedCallAction — clean up.
                 [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:unmuteAction.UUID.UUIDString];
+                self.activeCalls[sessionId][@"pendingProgrammaticUnmute"] = @NO;
                 [self logMessage:@"Error occurred unmuting Call"];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -1141,6 +1145,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
 
+    // If a programmatic unmute is in flight and CallKit fires a secondary unmute action (different UUID),
+    // fulfill it unconditionally — allowUnmute only gates UI-initiated requests.
+    BOOL pendingProgrammaticUnmute = [self.activeCalls[sessionId][@"pendingProgrammaticUnmute"] boolValue];
+    if (!isMuted && pendingProgrammaticUnmute) {
+        self.activeCalls[sessionId][@"pendingProgrammaticUnmute"] = @NO;
+        [action fulfill];
+        [self logMessage:@"performSetMutedCallAction: secondary programmatic unmute action fulfilled"];
+        return;
+    }
+
     BOOL allowUnmute = [self.activeCalls[sessionId][@"allowUnmute"] boolValue];
     if (!isMuted && !allowUnmute) {
         // If this is an unmute request and allowUnmute is NO for this session, fail the action.
@@ -1257,7 +1271,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDismiss": @NO,
-        @"allowUnmute": @YES
+        @"allowUnmute": @YES,
+        @"pendingProgrammaticUnmute": @NO
     } mutableCopy];
 }
 
