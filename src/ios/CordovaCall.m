@@ -38,6 +38,7 @@ AVAudioSessionCategory _savedAudioCategory;
 AVAudioSessionMode _savedAudioMode;
 AVAudioSessionCategoryOptions _savedAudioCategoryOptions = 0;
 BOOL _audioSessionStateSaved = NO;
+BOOL _audioSessionConfiguredForCall = NO;
 
 NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
@@ -135,6 +136,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     @try {
         AVAudioSession *sessionInstance = [AVAudioSession sharedInstance];
+        AVAudioSessionCategoryOptions targetOptions = AVAudioSessionCategoryOptionAllowBluetooth
+                                                   | AVAudioSessionCategoryOptionAllowAirPlay
+                                                   | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+
+        // AVAudioSessionModeVoiceChat enables iOS hardware AEC (via the Voice Processing I/O audio unit).
+        // WebRTC software AEC/AGC/NS is disabled via audioSourceWithConstraints in PluginGetUserMedia
+        // to prevent double-processing on top of the iOS hardware AEC.
+        AVAudioSessionMode targetMode = hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat;
+
+        BOOL alreadyConfigured = [sessionInstance.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]
+                              && sessionInstance.categoryOptions == targetOptions
+                              && [sessionInstance.mode isEqualToString:targetMode];
+        if (_audioSessionConfiguredForCall && alreadyConfigured) {
+            [self logMessage:[NSString stringWithFormat:@"setupAudioSession: already configured, skipping duplicate setup (mode=%@)", targetMode]];
+            return;
+        }
 
         // Capture the host app's audio session state the first time we configure it for a call,
         // so teardownAudioSession can restore exactly what was there before.
@@ -149,19 +166,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
         NSError *categoryError = nil;
         BOOL categoryConfigured = [sessionInstance setCategory:AVAudioSessionCategoryPlayAndRecord
-                                                   withOptions: AVAudioSessionCategoryOptionAllowBluetooth
-                                                              | AVAudioSessionCategoryOptionAllowAirPlay
-                                                              | AVAudioSessionCategoryOptionAllowBluetoothA2DP
+                                                   withOptions:targetOptions
                                                          error:&categoryError];
         if (!categoryConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session category: %@", categoryError]];
         }
 
         NSError *modeError = nil;
-        // AVAudioSessionModeVoiceChat enables iOS hardware AEC (via the Voice Processing I/O audio unit).
-        // WebRTC software AEC/AGC/NS is disabled via audioSourceWithConstraints in PluginGetUserMedia
-        // to prevent double-processing on top of the iOS hardware AEC.
-        AVAudioSessionMode targetMode = hasVideo ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat;
         BOOL modeConfigured = [sessionInstance setMode:targetMode error:&modeError];
         if (!modeConfigured) {
             [self logMessage:[NSString stringWithFormat:@"Failed to set audio session mode: %@", modeError]];
@@ -175,11 +186,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // libwebrtc internally — so we override it here to keep the mode consistent.
         RTCAudioSessionConfiguration *webRTCConfig = [RTCAudioSessionConfiguration webRTCConfiguration];
         webRTCConfig.category = AVAudioSessionCategoryPlayAndRecord;
-        webRTCConfig.categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth
-                                     | AVAudioSessionCategoryOptionAllowAirPlay
-                                     | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+        webRTCConfig.categoryOptions = targetOptions;
         webRTCConfig.mode = targetMode;  // AVAudioSessionMode is NSString* in ObjC, no .rawValue needed
         [RTCAudioSessionConfiguration setWebRTCConfiguration:webRTCConfig];
+        _audioSessionConfiguredForCall = YES;
         [self logMessage:[NSString stringWithFormat:@"setupAudioSession: RTCAudioSessionConfiguration updated to mode=%@", targetMode]];
     }
     @catch (NSException *exception) {
@@ -213,6 +223,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self logMessage:[NSString stringWithFormat:@"teardownAudioSession: audio session restored to %@/%@ (options: %lu)", categoryToRestore, modeToRestore, (unsigned long)optionsToRestore]];
 
         // Clear the saved state so the next call captures a fresh snapshot.
+        _audioSessionConfiguredForCall = NO;
         _audioSessionStateSaved = NO;
         _savedAudioCategory = nil;
         _savedAudioMode = nil;
@@ -221,6 +232,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     @catch (NSException *exception) {
         [self logMessage:@"Unknown error returned from teardownAudioSession"];
     }
+}
+
+- (void)setupAudioSession:(CDVInvokedUrlCommand*)command
+{
+    [self setupAudioSession];
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Audio session setup complete"];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command
