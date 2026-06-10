@@ -1,8 +1,9 @@
 #import <Cordova/CDV.h>
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
+#import <WebRTC/RTCAudioSession.h>
 
-@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate>
+@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate, RTCAudioSessionDelegate>
 
 // PushKit
 @property (nonatomic, copy) NSString *VoIPPushCallbackId;
