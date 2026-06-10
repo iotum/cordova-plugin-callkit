@@ -32,7 +32,6 @@ UIBackgroundTaskIdentifier bgTask;
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
-dispatch_queue_t callbackCleanupQueue;
 
 // Saved audio session state captured before setupAudioSession; restored in teardownAudioSession.
 AVAudioSessionCategory _savedAudioCategory;
@@ -60,7 +59,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.provider setDelegate:self queue:nil];
     self.callController = [[CXCallController alloc] init];
     self.activeCalls = [[NSMutableDictionary alloc] init];
-    callbackCleanupQueue = dispatch_queue_create("cordova.callkit.callbackCleanupQueue", DISPATCH_QUEUE_SERIAL);
     [[RTCAudioSession sharedInstance] addDelegate:self];
     //initialize callback dictionary
     callbackIds = [[NSMutableDictionary alloc]initWithCapacity:5];
@@ -589,8 +587,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionIdCopy = [sessionId copy];
     NSString *uuidStrCopy = [uuidStr copy];
     // Delay callbackMap cleanup so duplicate CallKit callbacks with the same UUID from Callkit reconciliation
-    // are still treated as programmatic. Removal is serialized on callbackCleanupQueue.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), callbackCleanupQueue, ^{
+    // are still treated as programmatic. Keep this on main to match activeCalls/callbackMap access confinement.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         NSMutableDictionary *call = self.activeCalls[sessionIdCopy];
         if (!call) return;
         NSMutableDictionary *callbackMap = call[@"callbackMap"];
@@ -948,7 +946,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
         // Process deferred callbacks for didActivateAudioSession (answer, unhold, sendCall).
         // UUID in callbackMap = programmatic → resolve promise; else = UI-initiated → emit event.
-        for (NSString *sessionId in self.activeCalls) {
+        NSArray *sessionIds = [self.activeCalls allKeys];
+        for (NSString *sessionId in sessionIds) {
             NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"];
             if (!pendingEmits || pendingEmits.count == 0) continue;
             NSArray *pendingItems = [pendingEmits copy];
