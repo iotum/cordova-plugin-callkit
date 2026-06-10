@@ -544,7 +544,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if (call) {
         CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
-        [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: %@", sessionId]];
+        [self logMessage:[NSString stringWithFormat:@"Programmatically Muting Call: sessionId=%@, actionUUID=%@", sessionId, muteAction.UUID.UUIDString]];
         // Pre-populate callbackMap before requestTransaction: performSetMutedCallAction fires
         // before the requestTransaction completion block, so the entry must already be present.
         self.activeCalls[sessionId][@"callbackMap"][muteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"mute" } mutableCopy];
@@ -552,7 +552,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             if (error != nil) {
                 // Transaction was rejected before reaching performSetMutedCallAction — clean up.
                 [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:muteAction.UUID.UUIDString];
-                [self logMessage:@"Error occurred muting Call"];
+                [self logMessage:[NSString stringWithFormat:@"Error occurred muting Call: sessionId=%@, actionUUID=%@, error=%@", sessionId, muteAction.UUID.UUIDString, error.localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -573,7 +573,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if (call) {
         CXSetMutedCallAction *unmuteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:call.UUID muted:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unmuteAction];
-        [self logMessage:[NSString stringWithFormat:@"Programmatically Unmuting Call: %@", sessionId]];
+        [self logMessage:[NSString stringWithFormat:@"Programmatically Unmuting Call: sessionId=%@, actionUUID=%@", sessionId, unmuteAction.UUID.UUIDString]];
         // Pre-populate callbackMap before requestTransaction: performSetMutedCallAction fires
         // before the requestTransaction completion block, so the entry must already be present.
         self.activeCalls[sessionId][@"callbackMap"][unmuteAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unmute" } mutableCopy];
@@ -581,7 +581,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             if (error != nil) {
                 // Transaction was rejected before reaching performSetMutedCallAction — clean up.
                 [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:unmuteAction.UUID.UUIDString];
-                [self logMessage:@"Error occurred unmuting Call"];
+                [self logMessage:[NSString stringWithFormat:@"Error occurred unmuting Call: sessionId=%@, actionUUID=%@, error=%@", sessionId, unmuteAction.UUID.UUIDString, error.localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": @"An error occurred", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -600,18 +600,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][uuidStr];
     if (!entry) return;
-    // TODO: Remove the queued callbackMap cleanup once the Callkit reconciliation duplicate callback issue is fixed
-    // [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
-    NSString *sessionIdCopy = [sessionId copy];
-    NSString *uuidStrCopy = [uuidStr copy];
-    // Delay callbackMap cleanup so duplicate CallKit callbacks with the same UUID from Callkit reconciliation
-    // are still treated as programmatic. Keep this on main to match activeCalls/callbackMap access confinement.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSMutableDictionary *call = self.activeCalls[sessionIdCopy];
-        if (!call) return;
-        NSMutableDictionary *callbackMap = call[@"callbackMap"];
-        [callbackMap removeObjectForKey:uuidStrCopy];
-    });
+    [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
     NSString *callbackId = entry[@"callbackId"];
     if (!callbackId) return;
     [self logMessage:[NSString stringWithFormat:@"resolved %@ promise for sessionId: %@", entry[@"event"], sessionId]];
@@ -1171,11 +1160,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     BOOL isMuted = action.muted;
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     if (!sessionId) {
-        [self logMessage:[NSString stringWithFormat:@"performSetMutedCallAction: no sessionId found for callUUID %@, ignoring %@ event", action.callUUID.UUIDString, isMuted ? @"mute" : @"unmute"]];
+        [self logMessage:[NSString stringWithFormat:@"performSetMutedCallAction: no sessionId found for callUUID=%@, actionUUID=%@, ignoring %@ event", action.callUUID.UUIDString, action.UUID.UUIDString, isMuted ? @"mute" : @"unmute"]];
         [action fulfill];
         return;
     }
-    [self logMessage:[NSString stringWithFormat:@"CallKit performSetMutedCallAction received %@ event, sessionId: %@", isMuted ? @"mute" : @"unmute", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"CallKit performSetMutedCallAction received %@ event, sessionId=%@, actionUUID=%@", isMuted ? @"mute" : @"unmute", sessionId, action.UUID.UUIDString]];
 
     if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
         [action fulfill];
