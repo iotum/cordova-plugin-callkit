@@ -32,6 +32,7 @@ UIBackgroundTaskIdentifier bgTask;
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
+dispatch_queue_t callbackCleanupQueue;
 
 // Saved audio session state captured before setupAudioSession; restored in teardownAudioSession.
 AVAudioSessionCategory _savedAudioCategory;
@@ -59,6 +60,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.provider setDelegate:self queue:nil];
     self.callController = [[CXCallController alloc] init];
     self.activeCalls = [[NSMutableDictionary alloc] init];
+    callbackCleanupQueue = dispatch_queue_create("cordova.callkit.callbackCleanupQueue", DISPATCH_QUEUE_SERIAL);
     //initialize callback dictionary
     callbackIds = [[NSMutableDictionary alloc]initWithCapacity:5];
     [callbackIds setObject:[NSMutableArray array] forKey:@"answer"];
@@ -581,7 +583,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId][@"callbackMap"][uuidStr];
     if (!entry) return;
-    [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
+    // TODO: Remove the queued callbackMap cleanup once the Callkit reconciliation duplicate callback issue is fixed
+    // [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:uuidStr];
+    NSString *sessionIdCopy = [sessionId copy];
+    NSString *uuidStrCopy = [uuidStr copy];
+    // Delay callbackMap cleanup so duplicate CallKit callbacks with the same UUID from Callkit reconciliation
+    // are still treated as programmatic. Removal is serialized on callbackCleanupQueue.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), callbackCleanupQueue, ^{
+        NSMutableDictionary *call = self.activeCalls[sessionIdCopy];
+        if (!call) return;
+        NSMutableDictionary *callbackMap = call[@"callbackMap"];
+        [callbackMap removeObjectForKey:uuidStrCopy];
+    });
     NSString *callbackId = entry[@"callbackId"];
     if (!callbackId) return;
     [self logMessage:[NSString stringWithFormat:@"resolved %@ promise for sessionId: %@", entry[@"event"], sessionId]];
@@ -1141,6 +1154,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
 
+    // UI-initiated mute/unmute: emit to event listeners only.
     BOOL allowUnmute = [self.activeCalls[sessionId][@"allowUnmute"] boolValue];
     if (!isMuted && !allowUnmute) {
         // If this is an unmute request and allowUnmute is NO for this session, fail the action.
@@ -1151,7 +1165,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     } else {
         [action fulfill];
 
-        // UI-initiated mute/unmute: emit to event listeners only.
         for (id callbackId in callbackIds[isMuted ? @"mute" : @"unmute"]) {
             [self logMessage:[NSString stringWithFormat:@"Sending %@ event to JS", isMuted ? @"mute" : @"unmute"]];
             NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", isMuted ? @"mute" : @"unmute"], @"sessionId": sessionId };
