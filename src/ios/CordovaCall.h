@@ -1,7 +1,8 @@
 #import <Cordova/CDV.h>
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
-#import <WebRTC/RTCAudioSession.h>
+
+@protocol RTCAudioSessionDelegate;
 
 @interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate, RTCAudioSessionDelegate>
 

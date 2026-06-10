@@ -933,7 +933,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     monitorAudioRouteChange = YES;
     // Pending activate emits (answer, unhold, sendCall) are deferred to
     // audioSessionDidStartPlayOrRecord: so JS is not notified until the WebRTC
-    // ADM has started initializing
+    // audio unit has started and the ADM is fully initialized.
 }
 
 // RTCAudioSessionDelegate — fires on the WebRTC audio thread once the audio unit
