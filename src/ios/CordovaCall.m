@@ -1479,11 +1479,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (void)dealloc;
 {
     [self _closeAllSockets];
+    [[RTCAudioSession sharedInstance] removeDelegate:self];
 }
 
 - (void)onReset;
 {
-    [[RTCAudioSession sharedInstance] removeDelegate:self];
     [super onReset];
 }
 
