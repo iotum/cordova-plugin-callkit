@@ -154,6 +154,10 @@ exports.log = function (message) {
   exec(null, null, "CordovaCall", "log", [message]);
 }
 
+exports.setupAudioSession = function (success, error) {
+  exec(success, error, "CordovaCall", "setupAudioSession", []);
+}
+
 exports.setAllowUnmute = function (sessionId, value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);

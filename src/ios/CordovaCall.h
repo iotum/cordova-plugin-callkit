@@ -2,7 +2,9 @@
 #import <PushKit/PushKit.h>
 #import <CallKit/CallKit.h>
 
-@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate>
+@protocol RTCAudioSessionDelegate;
+
+@interface CordovaCall : CDVPlugin <PKPushRegistryDelegate, CXProviderDelegate, RTCAudioSessionDelegate>
 
 // PushKit
 @property (nonatomic, copy) NSString *VoIPPushCallbackId;
@@ -20,6 +22,7 @@
 - (void)updateProviderConfig;
 - (void)setupAudioSession;
 - (void)teardownAudioSession;
+- (void)setupAudioSession:(CDVInvokedUrlCommand*)command;
 
 - (void)setAppName:(CDVInvokedUrlCommand*)command;
 - (void)setIcon:(CDVInvokedUrlCommand*)command;
