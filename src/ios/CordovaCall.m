@@ -964,8 +964,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 } else if ([eventType isEqualToString:@"sendCall"]) {
                     // UI-initiated (recents): emit to sendCall event listeners.
                     NSDictionary *callData = pendingStartCallData;
+                    if (callData == nil) {
+                        [self logMessage:[NSString stringWithFormat:@"audioSessionDidStartPlayOrRecord: pendingStartCallData was nil for sessionId=%@; skipping sendCall emit", sessionId]];
+                        continue;
+                    }
                     pendingStartCallData = nil;
-                    if ([callbackIds[@"sendCall"] count] == 0) {
                         pendingCallFromRecents = callData;
                     } else {
                         for (id callbackId in callbackIds[@"sendCall"]) {
