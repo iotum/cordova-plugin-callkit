@@ -969,6 +969,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                         continue;
                     }
                     pendingStartCallData = nil;
+                    if ([callbackIds[@"sendCall"] count] == 0) {
                         pendingCallFromRecents = callData;
                     } else {
                         for (id callbackId in callbackIds[@"sendCall"]) {
