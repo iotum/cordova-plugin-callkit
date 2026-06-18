@@ -908,11 +908,74 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [action fulfill];
     NSString *recentsSessionId = [NSString stringWithFormat:@"recents:%@", action.handle.value];
     BOOL isRecentsCall = self.activeCalls[recentsSessionId] != nil;
-    // Store the sendCall payload; it will be emitted in didActivateAudioSession via pendingActivateAudioSessionEmits.
+    // Store the sendCall payload; it will be emitted in audioSessionDidStartPlayOrRecord via pendingActivateAudioSessionEmits.
     pendingStartCallData = @{@"callName":action.contactIdentifier ?: action.handle.value ?: @"", @"callId": action.handle.value ?: @"", @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully", @"recentsSessionId": isRecentsCall ? recentsSessionId : [NSNull null]};
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     if (sessionId) {
         [self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"sendCall"}];
+    }
+}
+
+- (void)processPendingActivateEmitsSkippingTypes:(NSSet<NSString *> *)blockedEventTypes source:(NSString *)source
+{
+    // UUID in callbackMap = programmatic -> resolve promise; else = UI-initiated -> emit event.
+    NSArray *sessionIds = [self.activeCalls allKeys];
+    for (NSString *sessionId in sessionIds) {
+        NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"];
+        if (!pendingEmits || pendingEmits.count == 0) continue;
+
+        NSArray *pendingItems = [pendingEmits copy];
+        NSMutableArray *remainingItems = [NSMutableArray array];
+        for (NSDictionary *item in pendingItems) {
+            NSString *uuidStr = item[@"uuid"];
+            NSString *eventType = item[@"type"];
+
+            // Keep events for the next stage if this callback should not handle them.
+            if ([blockedEventTypes containsObject:eventType]) {
+                [remainingItems addObject:item];
+                continue;
+            }
+
+            if (self.activeCalls[sessionId][@"callbackMap"][uuidStr]) {
+                // Programmatic action: resolve the JS promise only.
+                [self resolveCommandForSessionId:sessionId actionUUIDString:uuidStr];
+            } else if ([eventType isEqualToString:@"answer"]) {
+                [self logMessage:[NSString stringWithFormat:@"%@: emitting deferred answer for sessionId=%@", source, sessionId]];
+                if ([callbackIds[@"answer"] count] == 0) {
+                    [pendingCallResponses addObject:@{ @"type": PENDING_RESPONSE_ANSWER, @"sessionId": sessionId }];
+                } else {
+                    [self triggerCordovaEventForCallResponse:@"answer" sessionId:sessionId];
+                }
+            } else if ([eventType isEqualToString:@"sendCall"]) {
+                // UI-initiated (recents): emit to sendCall event listeners.
+                NSDictionary *callData = pendingStartCallData;
+                if (callData == nil) {
+                    [self logMessage:[NSString stringWithFormat:@"%@: pendingStartCallData was nil for sessionId=%@; skipping sendCall emit", source, sessionId]];
+                    continue;
+                }
+                pendingStartCallData = nil;
+                if ([callbackIds[@"sendCall"] count] == 0) {
+                    pendingCallFromRecents = callData;
+                } else {
+                    for (id callbackId in callbackIds[@"sendCall"]) {
+                        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
+                        [pluginResult setKeepCallbackAsBool:YES];
+                        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+                    }
+                }
+            } else {
+                // UI-initiated action: emit to event listeners only.
+                NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", eventType], @"sessionId": sessionId };
+                for (id callbackId in callbackIds[eventType]) {
+                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                    [pluginResult setKeepCallbackAsBool:YES];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+                }
+            }
+        }
+
+        // Keep unhandled events for the next callback stage.
+        [pendingEmits setArray:remainingItems];
     }
 }
 
@@ -927,9 +990,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     monitorAudioRouteChange = YES;
-    // Pending activate emits (answer, unhold, sendCall) are deferred to
-    // audioSessionDidStartPlayOrRecord: so JS is not notified until the WebRTC
-    // audio unit has started and the ADM is fully initialized.
+
+    // Stage 1: handle answer/unhold immediately after CallKit activates the audio session.
+    // sendCall stay queued and are handled after WebRTC audio starts.
+    NSSet<NSString *> *blockedEventTypes = [NSSet setWithObjects:@"sendCall", nil];
+    [self processPendingActivateEmitsSkippingTypes:blockedEventTypes source:@"didActivateAudioSession"];
 }
 
 // RTCAudioSessionDelegate — fires on the WebRTC audio thread once the audio unit
@@ -940,55 +1005,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     dispatch_async(dispatch_get_main_queue(), ^{
         [self logMessage:@"audioSessionDidStartPlayOrRecord: WebRTC ADM ready, emitting deferred activate callbacks"];
 
-        // Process deferred callbacks for didActivateAudioSession (answer, unhold, sendCall).
-        // UUID in callbackMap = programmatic → resolve promise; else = UI-initiated → emit event.
-        NSArray *sessionIds = [self.activeCalls allKeys];
-        for (NSString *sessionId in sessionIds) {
-            NSMutableArray *pendingEmits = self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"];
-            if (!pendingEmits || pendingEmits.count == 0) continue;
-            NSArray *pendingItems = [pendingEmits copy];
-            [pendingEmits removeAllObjects];
-            for (NSDictionary *item in pendingItems) {
-                NSString *uuidStr = item[@"uuid"];
-                NSString *eventType = item[@"type"];
-                if (self.activeCalls[sessionId][@"callbackMap"][uuidStr]) {
-                    // Programmatic action: resolve the JS promise only.
-                    [self resolveCommandForSessionId:sessionId actionUUIDString:uuidStr];
-                } else if ([eventType isEqualToString:@"answer"]) {
-                    [self logMessage:[NSString stringWithFormat:@"audioSessionDidStartPlayOrRecord: emitting deferred answer for sessionId=%@", sessionId]];
-                    if ([callbackIds[@"answer"] count] == 0) {
-                        [pendingCallResponses addObject:@{ @"type": PENDING_RESPONSE_ANSWER, @"sessionId": sessionId }];
-                    } else {
-                        [self triggerCordovaEventForCallResponse:@"answer" sessionId:sessionId];
-                    }
-                } else if ([eventType isEqualToString:@"sendCall"]) {
-                    // UI-initiated (recents): emit to sendCall event listeners.
-                    NSDictionary *callData = pendingStartCallData;
-                    if (callData == nil) {
-                        [self logMessage:[NSString stringWithFormat:@"audioSessionDidStartPlayOrRecord: pendingStartCallData was nil for sessionId=%@; skipping sendCall emit", sessionId]];
-                        continue;
-                    }
-                    pendingStartCallData = nil;
-                    if ([callbackIds[@"sendCall"] count] == 0) {
-                        pendingCallFromRecents = callData;
-                    } else {
-                        for (id callbackId in callbackIds[@"sendCall"]) {
-                            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:callData];
-                            [pluginResult setKeepCallbackAsBool:YES];
-                            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-                        }
-                    }
-                } else {
-                    // UI-initiated action: emit to event listeners only.
-                    NSDictionary *resultDict = @{ @"message": [NSString stringWithFormat:@"%@ event called successfully", eventType], @"sessionId": sessionId };
-                    for (id callbackId in callbackIds[eventType]) {
-                        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-                        [pluginResult setKeepCallbackAsBool:YES];
-                        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-                    }
-                }
-            }
-        }
+        // Stage 2: once WebRTC audio unit starts, handle sendCall.
+        NSSet<NSString *> *blockedEventTypes = [NSSet setWithObjects:@"unhold", @"answer", nil];
+        [self processPendingActivateEmitsSkippingTypes:blockedEventTypes source:@"audioSessionDidStartPlayOrRecord"];
     });
 }
 
