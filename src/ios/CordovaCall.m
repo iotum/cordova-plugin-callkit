@@ -17,7 +17,6 @@ NSString* icon;
 BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
-NSDictionary* pendingStartCallData;
 BOOL monitorAudioRouteChange = NO;
 BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
@@ -908,10 +907,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [action fulfill];
     NSString *recentsSessionId = [NSString stringWithFormat:@"recents:%@", action.handle.value];
     BOOL isRecentsCall = self.activeCalls[recentsSessionId] != nil;
-    // Store the sendCall payload; it will be emitted in audioSessionDidStartPlayOrRecord via pendingActivateAudioSessionEmits.
-    pendingStartCallData = @{@"callName":action.contactIdentifier ?: action.handle.value ?: @"", @"callId": action.handle.value ?: @"", @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully", @"recentsSessionId": isRecentsCall ? recentsSessionId : [NSNull null]};
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
     if (sessionId) {
+        // Store the sendCall payload per session; it will be emitted later from
+        // pendingActivateAudioSessionEmits handling.
+        self.activeCalls[sessionId][@"pendingStartCallData"] = @{@"callName":action.contactIdentifier ?: action.handle.value ?: @"", @"callId": action.handle.value ?: @"", @"isVideo": action.video?@YES:@NO, @"message": @"sendCall event called successfully", @"recentsSessionId": isRecentsCall ? recentsSessionId : [NSNull null]};
         [self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"sendCall"}];
     }
 }
@@ -948,12 +948,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 }
             } else if ([eventType isEqualToString:@"sendCall"]) {
                 // UI-initiated (recents): emit to sendCall event listeners.
-                NSDictionary *callData = pendingStartCallData;
+                id callDataValue = self.activeCalls[sessionId][@"pendingStartCallData"];
+                NSDictionary *callData = [callDataValue isKindOfClass:[NSDictionary class]] ? callDataValue : nil;
                 if (callData == nil) {
-                    [self logMessage:[NSString stringWithFormat:@"%@: pendingStartCallData was nil for sessionId=%@; skipping sendCall emit", source, sessionId]];
+                    [self logMessage:[NSString stringWithFormat:@"%@: pendingStartCallData was nil in activeCalls for sessionId=%@; skipping sendCall emit", source, sessionId]];
                     continue;
                 }
-                pendingStartCallData = nil;
+                [self.activeCalls[sessionId] removeObjectForKey:@"pendingStartCallData"];
                 if ([callbackIds[@"sendCall"] count] == 0) {
                     pendingCallFromRecents = callData;
                 } else {
@@ -992,7 +993,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     monitorAudioRouteChange = YES;
 
     // Stage 1: handle answer/unhold immediately after CallKit activates the audio session.
-    // sendCall stay queued and are handled after WebRTC audio starts.
+    // sendCall stays queued and is handled after WebRTC audio starts.
     NSSet<NSString *> *blockedEventTypes = [NSSet setWithObjects:@"sendCall", nil];
     [self processPendingActivateEmitsSkippingTypes:blockedEventTypes source:@"didActivateAudioSession"];
 }
@@ -1299,6 +1300,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     return [@{
         @"callUUID": callUUID,
         @"callbackMap": [NSMutableDictionary dictionary],
+        @"pendingStartCallData": [NSNull null],
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDismiss": @NO,
