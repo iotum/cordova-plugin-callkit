@@ -319,6 +319,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
+// TODO: Resolve JS promise after processPendingActivateEmitsSkippingTypes like sendCall
+// Ensures WebRTC is initialized before allowing any mute/unmute actions
 - (void)receiveCall:(CDVInvokedUrlCommand*)command
 {
     [self logMessage:@"receiveCall"];
@@ -400,10 +402,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     startCallAction.contactIdentifier = callName;
     startCallAction.video = hasVideo;
     CXTransaction *transaction = [[CXTransaction alloc] initWithAction:startCallAction];
+    // Pre-populate callbackMap before requestTransaction: performStartCallAction can fire
+    // before the requestTransaction completion block.
+    self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"sendCall" } mutableCopy];
     [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-        if (error == nil) {
-            self.activeCalls[sessionId][@"callbackMap"][startCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"sendCall" } mutableCopy];
-        } else {
+        if (error != nil) {
+            // Transaction was rejected before reaching performStartCallAction — clean up.
+            [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:startCallAction.UUID.UUIDString];
             [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
         }
     }];
@@ -472,12 +477,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     if(call) {
         CXEndCallAction *endCallAction = [[CXEndCallAction alloc] initWithCallUUID:call.UUID];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:endCallAction];
+        // Pre-populate callbackMap before requestTransaction: performEndCallAction can fire
+        // before the requestTransaction completion block.
+        self.activeCalls[sessionId][@"callbackMap"][endCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"endCall" } mutableCopy];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                // Persist UUID→callbackId in the shared map so didDeactivateAudioSession can
-                // resolve the JS promise once CallKit confirms the end.
-                self.activeCalls[sessionId][@"callbackMap"][endCallAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"endCall" } mutableCopy];
-            } else {
+            if (error != nil) {
+                // Transaction was rejected before reaching performEndCallAction — clean up.
+                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
                 [self logMessage:[error localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": [error localizedDescription], @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -841,10 +847,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetHeldCallAction *holdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:YES];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:holdAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Holding Call: %@", sessionId]];
+        // Pre-populate callbackMap before requestTransaction: performSetHeldCallAction can fire
+        // before the requestTransaction completion block.
+        self.activeCalls[sessionId][@"callbackMap"][holdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"hold" } mutableCopy];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                self.activeCalls[sessionId][@"callbackMap"][holdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"hold" } mutableCopy];
-            } else {
+            if (error != nil) {
+                // Transaction was rejected before reaching performSetHeldCallAction — clean up.
+                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:holdAction.UUID.UUIDString];
                 [self logMessage:@"Error occurred holding Call"];
                 NSDictionary *resultDict = @{ @"message": @"hold event error", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -867,10 +876,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         CXSetHeldCallAction *unholdAction = [[CXSetHeldCallAction alloc] initWithCallUUID:call.UUID onHold:NO];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:unholdAction];
         [self logMessage:[NSString stringWithFormat:@"Programmatically Unholding Call: %@", sessionId]];
+        // Pre-populate callbackMap before requestTransaction: performSetHeldCallAction can fire
+        // before the requestTransaction completion block.
+        self.activeCalls[sessionId][@"callbackMap"][unholdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unhold" } mutableCopy];
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-            if (error == nil) {
-                self.activeCalls[sessionId][@"callbackMap"][unholdAction.UUID.UUIDString] = [@{ @"callbackId": command.callbackId, @"event": @"unhold" } mutableCopy];
-            } else {
+            if (error != nil) {
+                // Transaction was rejected before reaching performSetHeldCallAction — clean up.
+                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:unholdAction.UUID.UUIDString];
                 [self logMessage:@"Error occurred unholding Call"];
                 NSDictionary *resultDict = @{ @"message": @"unhold event error", @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
