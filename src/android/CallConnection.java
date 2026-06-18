@@ -49,13 +49,14 @@ class CallConnection extends Connection {
         // destroy() is called after setDisconnected() so the ConnectionService framework's own
         // listener can send setDisconnected → removeCall to Telecom in the correct order first.
         this.destroy();
+        JSONObject payload = new JSONObject();
         try {
-            JSONObject payload = new JSONObject();
+            payload.put("message", "hangup event called successfully");
             payload.put("sessionId", this.sessionId);
-            CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, payload));
         } catch (JSONException e) {
             Log.e(MyConnectionService.TAG, "Failed to build hangup payload", e);
         }
+        CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, payload));
     }
 
     @Override
