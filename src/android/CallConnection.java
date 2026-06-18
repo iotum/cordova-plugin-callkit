@@ -2,6 +2,9 @@ package com.dmarc.cordovacall;
 
 import org.apache.cordova.PluginResult;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.Context;
 import android.content.Intent;
 import android.telecom.CallAudioState;
@@ -46,7 +49,13 @@ class CallConnection extends Connection {
         // destroy() is called after setDisconnected() so the ConnectionService framework's own
         // listener can send setDisconnected → removeCall to Telecom in the correct order first.
         this.destroy();
-        CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, "hangup event called successfully"));
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("sessionId", this.sessionId);
+            CordovaCall.emitEvent("hangup", new PluginResult(PluginResult.Status.OK, payload));
+        } catch (JSONException e) {
+            Log.e(MyConnectionService.TAG, "Failed to build hangup payload", e);
+        }
     }
 
     @Override
