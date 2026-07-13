@@ -355,7 +355,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.hasVideo = hasVideo;
     callUpdate.localizedCallerName = callName;
     callUpdate.supportsGrouping = YES;
-    callUpdate.supportsUngrouping = YES;
+    callUpdate.supportsUngrouping = NO;
     callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
     [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
@@ -971,7 +971,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.hasVideo = hasVideo;
     callUpdate.localizedCallerName = action.contactIdentifier;
     callUpdate.supportsGrouping = YES;
-    callUpdate.supportsUngrouping = YES;
+    callUpdate.supportsUngrouping = NO;
     callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
 
