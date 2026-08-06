@@ -1232,6 +1232,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
             [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
         }
+        // Also tear down the session so no stale state / pending promises remain.
+        [self rejectPendingCommandsForSessionId:sessionId];
+        [self.activeCalls removeObjectForKey:sessionId];
     }
     monitorAudioRouteChange = NO;
     [action fulfill];
