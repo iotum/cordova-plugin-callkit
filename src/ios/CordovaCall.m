@@ -1169,6 +1169,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"performEndCallAction"];
     [self stopKeepAlive:nil];
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    if (!sessionId) {
+        [self logMessage:@"performEndCallAction: no sessionId found for UUID, fulfilling action"];
+        [action fulfill];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if(call) {
         if(call.hasConnected) {
