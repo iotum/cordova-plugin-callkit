@@ -127,10 +127,6 @@ exports.group = function (sessionId, groupWithSessionId, success, error) {
   exec(success, error, "CordovaCall", "group", [sessionId, groupWithSessionId]);
 };
 
-exports.ungroup = function (sessionId, success, error) {
-  exec(success, error, "CordovaCall", "ungroup", [sessionId]);
-};
-
 exports.on = function (e, f) {
   var success = function (message) {
     f(message);

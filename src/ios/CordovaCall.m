@@ -1169,12 +1169,48 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"performEndCallAction"];
     [self stopKeepAlive:nil];
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    if (!sessionId) {
+        [self logMessage:@"performEndCallAction: no sessionId found for UUID, fulfilling action"];
+        [action fulfill];
+        return;
+    }
     CXCall *call = [self callForSessionId:sessionId];
     if(call) {
         if(call.hasConnected) {
             // Defer the hangup event and endCall promise resolution to didDeactivateAudioSession
             // so that audio is fully torn down before JS is notified.
             [self.activeCalls[sessionId][@"pendingDeactivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"hangup"}];
+
+            // If another call is still active, CallKit keeps the shared audio session active and
+            // didDeactivateAudioSession will not fire for this ended call. Flush this session now
+            // so hangup/endCall callbacks don't remain pending indefinitely.
+            BOOL hasOtherActiveCall = NO;
+            for (CXCall *observedCall in self.callController.callObserver.calls) {
+                if (![observedCall.UUID isEqual:action.callUUID] && !observedCall.hasEnded) {
+                    hasOtherActiveCall = YES;
+                    break;
+                }
+            }
+            if (hasOtherActiveCall) {
+                [self logMessage:[NSString stringWithFormat:@"performEndCallAction: ending session %@ while another call remains active, flushing pending deactivate emits immediately", sessionId]];
+
+                // didDeactivateAudioSession won't fire while another call remains active,
+                // so emit hangup now for this ended session.
+                for (id callbackId in callbackIds[@"hangup"]) {
+                    NSDictionary *resultDict = @{ @"message": @"hangup event called successfully", @"sessionId": sessionId };
+                    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
+                    [pluginResult setKeepCallbackAsBool:YES];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+                }
+
+                // Resolve the programmatic endCall promise before rejecting remaining callbacks.
+                if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
+                    [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
+                }
+
+                [self rejectPendingCommandsForSessionId:sessionId];
+                [self.activeCalls removeObjectForKey:sessionId];
+            }
         } else {
             if ([callbackIds[@"reject"] count] == 0) {
                 // callbackId for event not registered, add to pending to trigger on registration
@@ -1194,6 +1230,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             [self rejectPendingCommandsForSessionId:sessionId];
             [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
         }
+    } else {
+        // Race: CallKit can invoke performEndCallAction after the call has already disappeared
+        // (e.g. near-simultaneous SIP/CallKit teardown). If this was a programmatic endCall,
+        // resolve it now so JS does not wait indefinitely.
+        if (self.activeCalls[sessionId][@"callbackMap"][action.UUID.UUIDString]) {
+            [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
+        }
+        // Also tear down the session so no stale state / pending promises remain.
+        [self rejectPendingCommandsForSessionId:sessionId];
+        [self.activeCalls removeObjectForKey:sessionId];
     }
     monitorAudioRouteChange = NO;
     [action fulfill];
@@ -1288,7 +1334,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     BOOL isGrouping = action.callUUIDToGroupWith != nil;
-    [self logMessage:[NSString stringWithFormat:@"performSetGroupCallAction: %@ event for sessionId: %@", isGrouping ? @"group" : @"ungroup", sessionId]];
+    [self logMessage:[NSString stringWithFormat:@"performSetGroupCallAction: group action callback for sessionId: %@", sessionId]];
     [action fulfill];
 
     if (isGrouping) {
@@ -1303,16 +1349,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             @"groupedWithSessionId": groupedWithSessionId ?: [NSNull null]
         };
         for (id callbackId in callbackIds[@"group"]) {
-            CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
-            [pluginResult setKeepCallbackAsBool:YES];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
-        }
-    } else {
-        NSDictionary *resultDict = @{
-            @"message": @"ungroup event called successfully",
-            @"sessionId": sessionId
-        };
-        for (id callbackId in callbackIds[@"ungroup"]) {
             CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
