@@ -50,7 +50,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableSet *handleTypes = [[NSMutableSet alloc] init];
     [handleTypes addObject:@(CXHandleTypePhoneNumber)];
     providerConfiguration.supportedHandleTypes = handleTypes;
-    providerConfiguration.supportsVideo = hasVideo;
+    providerConfiguration.supportsVideo = NO;
     if (@available(iOS 11.0, *)) {
         providerConfiguration.includesCallsInRecents = NO;
     }
@@ -123,7 +123,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableSet *handleTypes = [[NSMutableSet alloc] init];
     [handleTypes addObject:@(CXHandleTypePhoneNumber)];
     providerConfiguration.supportedHandleTypes = handleTypes;
-    providerConfiguration.supportsVideo = hasVideo;
+    providerConfiguration.supportsVideo = NO;
     if (@available(iOS 11.0, *)) {
         providerConfiguration.includesCallsInRecents = includeInRecents;
     }
@@ -351,7 +351,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = handle;
-    callUpdate.hasVideo = hasVideo;
+    callUpdate.hasVideo = NO;
     callUpdate.localizedCallerName = callName;
     callUpdate.supportsGrouping = YES;
     callUpdate.supportsUngrouping = NO;
@@ -401,7 +401,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
     CXStartCallAction *startCallAction = [[CXStartCallAction alloc] initWithCallUUID:callUUID handle:handle];
     startCallAction.contactIdentifier = callName;
-    startCallAction.video = hasVideo;
+    startCallAction.video = NO;
     CXTransaction *transaction = [[CXTransaction alloc] initWithAction:startCallAction];
     // Pre-populate callbackMap before requestTransaction: performStartCallAction can fire
     // before the requestTransaction completion block.
@@ -411,7 +411,17 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             // Transaction was rejected before reaching performStartCallAction — clean up.
             [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:startCallAction.UUID.UUIDString];
             [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
+            return;
         }
+
+        // Submit the initial mute separately after CallKit has accepted the start action.
+        CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:callUUID muted:YES];
+        CXTransaction *muteTransaction = [[CXTransaction alloc] initWithAction:muteAction];
+        [self.callController requestTransaction:muteTransaction completion:^(NSError * _Nullable muteError) {
+            if (muteError != nil) {
+                [self logMessage:[NSString stringWithFormat:@"Failed to start outgoing call muted: %@", [muteError localizedDescription]]];
+            }
+        }];
     }];
 }
 
@@ -937,7 +947,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self setupAudioSession];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
     callUpdate.remoteHandle = action.handle;
-    callUpdate.hasVideo = hasVideo;
+    callUpdate.hasVideo = NO;
     callUpdate.localizedCallerName = action.contactIdentifier;
     callUpdate.supportsGrouping = YES;
     callUpdate.supportsUngrouping = NO;
@@ -1148,6 +1158,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [action fulfill];
 
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
+    CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:action.callUUID muted:YES];
+    CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
+    [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+        if (error != nil) {
+            [self logMessage:[NSString stringWithFormat:@"Failed to start incoming call muted: %@", [error localizedDescription]]];
+        }
+    }];
     // Defer the answer callback until didActivateAudioSession so that JsSIP's gUM
     // runs only after the audio session is fully active and owned by CallKit.
     [self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
