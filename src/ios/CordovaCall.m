@@ -411,17 +411,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             // Transaction was rejected before reaching performStartCallAction — clean up.
             [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:startCallAction.UUID.UUIDString];
             [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
-            return;
         }
-
-        // Submit the initial mute separately after CallKit has accepted the start action.
-        CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:callUUID muted:YES];
-        CXTransaction *muteTransaction = [[CXTransaction alloc] initWithAction:muteAction];
-        [self.callController requestTransaction:muteTransaction completion:^(NSError * _Nullable muteError) {
-            if (muteError != nil) {
-                [self logMessage:[NSString stringWithFormat:@"Failed to start outgoing call muted: %@", [muteError localizedDescription]]];
-            }
-        }];
     }];
 }
 
@@ -1158,13 +1148,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [action fulfill];
 
     NSString *sessionId = [self sessionIdForUUID:action.callUUID];
-    CXSetMutedCallAction *muteAction = [[CXSetMutedCallAction alloc] initWithCallUUID:action.callUUID muted:YES];
-    CXTransaction *transaction = [[CXTransaction alloc] initWithAction:muteAction];
-    [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
-        if (error != nil) {
-            [self logMessage:[NSString stringWithFormat:@"Failed to start incoming call muted: %@", [error localizedDescription]]];
-        }
-    }];
     // Defer the answer callback until didActivateAudioSession so that JsSIP's gUM
     // runs only after the audio session is fully active and owned by CallKit.
     [self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
