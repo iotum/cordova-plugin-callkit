@@ -29,7 +29,8 @@ class IncomingCallConnection extends CallConnection {
 
     boolean isAnsweredWithinGracePeriod() {
         long answeredAt = answeredAtMillis;
-        return answeredAt != 0 && (System.currentTimeMillis() - answeredAt) < ANSWER_CONNECT_TIMEOUT_MS;
+        long elapsed = System.currentTimeMillis() - answeredAt;
+        return answeredAt != 0 && elapsed >= 0 && elapsed < ANSWER_CONNECT_TIMEOUT_MS;
     }
 
     IncomingCallConnection(MyConnectionService service, String callUUID, String payloadString, String callerName, String sessionId) {
