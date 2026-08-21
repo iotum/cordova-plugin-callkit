@@ -51,7 +51,12 @@ public class CallAudioService extends Service {
         String peerName = intent.getStringExtra("peerName");
         String sessionId = intent.getStringExtra("sessionId");
 
-        OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId);
+        // If the service is already running (e.g., started again for the same call), reuse the
+        // existing notification ID so startForeground updates the existing notification instead
+        // of creating a new, orphaned one.
+        OngoingCallNotification onGoingCallNotification = currentNotificationId != -1
+                ? new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId, currentNotificationId)
+                : new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId);
 
         Notification notification = onGoingCallNotification.build();
         int notificationID = onGoingCallNotification.getNotificationID();
