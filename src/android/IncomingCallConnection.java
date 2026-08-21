@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.telecom.Connection;
 import android.telecom.DisconnectCause;
 import android.util.Log;
@@ -25,11 +26,11 @@ class IncomingCallConnection extends CallConnection {
     // calls connectCall(), so this lets MyConnectionService distinguish "user already answered,
     // just waiting on the web app" from a genuinely un-answered ringing call - but only for a
     // bounded grace period, so a call whose web app never connects doesn't hang around forever.
-    private volatile long answeredAtMillis = 0;
+    private volatile long answeredAtElapsed = 0;
 
     boolean isAnsweredWithinGracePeriod() {
-        long answeredAt = answeredAtMillis;
-        long elapsed = System.currentTimeMillis() - answeredAt;
+        long answeredAt = answeredAtElapsed;
+        long elapsed = SystemClock.elapsedRealtime() - answeredAt;
         return answeredAt != 0 && elapsed >= 0 && elapsed < ANSWER_CONNECT_TIMEOUT_MS;
     }
 
@@ -64,7 +65,7 @@ class IncomingCallConnection extends CallConnection {
     public void onAnswer() {
         Log.d(MyConnectionService.TAG, "onAnswer()");
 
-        answeredAtMillis = System.currentTimeMillis();
+        answeredAtElapsed = SystemClock.elapsedRealtime();
         timeoutHandler.postDelayed(this::abortIfStillNotConnected, ANSWER_CONNECT_TIMEOUT_MS);
         cancelIncomingCallNotification();
 
