@@ -44,15 +44,17 @@ public class IncomingCallNotification {
     public Notification build() {
         int timeout = 30000;
 
-        // NOTE: "Notifications should only launch a BroadcastReceiver from notification actions"
-
-        Intent answerIntent = new Intent(this.context, CallActionReceiver.class);
-        answerIntent.setAction("answerCall");
-        answerIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
-        answerIntent.putExtra("sessionId", this.sessionId);
-        answerIntent.putExtra("notificationID", this.notificationID);
-        PendingIntent answerPendingIntent = PendingIntent.getBroadcast(
-                this.context, 0, answerIntent,
+        // Answer launches IncomingCallActivity directly (with autoAnswer=true) rather than going through
+        // CallActionReceiver, since a system-delivered activity PendingIntent is exempt from the
+        // Background Activity Launch restrictions that otherwise block bringing the app to the
+        // foreground reliably when answering from a background/service context (see IncomingCallActivity).
+        Intent answerActivityIntent = new Intent(this.context, IncomingCallActivity.class);
+        answerActivityIntent.putExtra("sessionId", this.sessionId);
+        answerActivityIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+        answerActivityIntent.putExtra("autoAnswer", true);
+        answerActivityIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        PendingIntent answerPendingIntent = PendingIntent.getActivity(
+                this.context, 2, answerActivityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 

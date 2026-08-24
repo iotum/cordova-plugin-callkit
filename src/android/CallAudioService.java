@@ -1,10 +1,12 @@
 package com.dmarc.cordovacall;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioManager;
 import android.os.Build;
@@ -12,6 +14,7 @@ import android.os.IBinder;
 import android.util.Log;
 
 import androidx.core.app.ServiceCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * This is a service designed to be launched directly into the foreground throughout the duration
@@ -48,7 +51,12 @@ public class CallAudioService extends Service {
         String peerName = intent.getStringExtra("peerName");
         String sessionId = intent.getStringExtra("sessionId");
 
-        OngoingCallNotification onGoingCallNotification = new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId);
+        // If the service is already running (e.g., started again for the same call), reuse the
+        // existing notification ID so startForeground updates the existing notification instead
+        // of creating a new, orphaned one.
+        OngoingCallNotification onGoingCallNotification = currentNotificationId != -1
+                ? new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId, currentNotificationId)
+                : new OngoingCallNotification(this.getApplicationContext(), peerName, sessionId);
 
         Notification notification = onGoingCallNotification.build();
         int notificationID = onGoingCallNotification.getNotificationID();
@@ -56,13 +64,21 @@ public class CallAudioService extends Service {
 
         // For Android 14 (API 34) and above, you MUST specify types in code
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            Log.d(TAG, "calling startForeground (service types phone call + microphone)...");
+            // This service is started as soon as a call is answered (before the web app has necessarily
+            // been granted RECORD_AUDIO) so it can act as a foreground-service BAL exemption, allowing
+            // MyConnectionService to bring the app to the foreground. The microphone type must only be
+            // requested once RECORD_AUDIO is actually granted, since Android 14+ throws a SecurityException
+            // if a FOREGROUND_SERVICE_TYPE_MICROPHONE service is started without the permission already held.
+            int serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                serviceTypes |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            }
+            Log.d(TAG, "calling startForeground (service types: " + serviceTypes + ")...");
             ServiceCompat.startForeground(
                     this,
                     notificationID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL |
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    serviceTypes
             );
         } else {
             startForeground(notificationID, notification);

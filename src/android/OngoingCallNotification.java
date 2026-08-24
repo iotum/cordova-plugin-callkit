@@ -28,7 +28,11 @@ public class OngoingCallNotification {
     private static final String NOTIFICATION_CHANNEL_ID = "ongoing_calls";
 
     public OngoingCallNotification(Context context, String peerName, String sessionId) {
-        this.notificationID = new Random().nextInt(100000) + 1;
+        this(context, peerName, sessionId, new Random().nextInt(100000) + 1);
+    }
+
+    public OngoingCallNotification(Context context, String peerName, String sessionId, int notificationID) {
+        this.notificationID = notificationID;
         this.context = context;
         this.notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 

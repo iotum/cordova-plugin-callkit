@@ -76,12 +76,21 @@ public class IncomingCallActivity extends AppCompatActivity {
         }
 
         // --- Activity Window Setup ---
+        // Applied unconditionally (even for autoAnswer) so the activity actually becomes the visible
+        // foreground window - including over the lockscreen - before any further activity starts are attempted.
         getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
                         WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
                         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         );
+
+        if (this.getIntent().getBooleanExtra("autoAnswer", false)) {
+            // Launched directly from the notification's Answer action - skip the UI and answer immediately.
+            Log.d(TAG, "autoAnswer set, answering immediately");
+            this.onAnswerClicked();
+            return;
+        }
 
         // --- Create Root Layout ---
         RelativeLayout rootLayout = new RelativeLayout(this);
@@ -179,9 +188,25 @@ public class IncomingCallActivity extends AppCompatActivity {
     @Override
     public void onNewIntent(@NonNull Intent intent, @NonNull ComponentCaller caller) {
         super.onNewIntent(intent, caller);
+        handleNewIntent(intent);
+    }
+
+    @Override
+    public void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        handleNewIntent(intent);
+    }
+
+    private void handleNewIntent(@NonNull Intent intent) {
         this.setIntent(intent); // So that future calls to this.getIntent() return the new intent, and not the initial intent of the activity
 
         this.sessionId = intent.getStringExtra("sessionId");
+
+        if (intent.getBooleanExtra("autoAnswer", false)) {
+            Log.d(TAG, "autoAnswer set (onNewIntent), answering immediately");
+            this.onAnswerClicked();
+            return;
+        }
 
         this.updateCallerNameView();
     }

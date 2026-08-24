@@ -99,8 +99,17 @@ public class MyConnectionService extends ConnectionService {
                     }
                 } else {
                     int state = conn.getState();
+                    boolean answeredLocally = conn instanceof IncomingCallConnection && ((IncomingCallConnection) conn).isAnsweredWithinGracePeriod();
                     if (state == Connection.STATE_DISCONNECTED) {
                         Log.d(TAG, "Call is already marked disconnected, call_uuid: " + callUUID);
+                    } else if (answeredLocally) {
+                        // The user already tapped answer; the connection just hasn't left STATE_RINGING
+                        // yet because that only happens once the web app calls connectCall(). A dismiss
+                        // racing in during that window must not cancel a call the user already answered.
+                        // Only suppressed for a bounded grace period - see isAnsweredWithinGracePeriod() -
+                        // so a call whose web app never connects doesn't become unkillable.
+                        Log.d(TAG, "Ignoring dismiss for connection already answered locally, state: "
+                                + Connection.stateToString(state) + ", call_uuid: " + callUUID);
                     } else if (state == Connection.STATE_NEW || state == Connection.STATE_RINGING) {
                         // Only abort pre-answer states. STATE_NEW covers the brief window between
                         // onCreateIncomingConnection returning and onShowIncomingCallUi calling
