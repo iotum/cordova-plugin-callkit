@@ -155,6 +155,10 @@ public class MyConnectionService extends ConnectionService {
     }
 
     public void showWebApp(String userAction, String payload) {
+        showWebApp(userAction, payload, false);
+    }
+
+    public void showWebApp(String userAction, String payload, boolean fromLockscreen) {
         Log.d(TAG, "showWebApp()");
         Context context = this.getApplicationContext();
         PackageManager packageManager = context.getPackageManager();
@@ -176,6 +180,9 @@ public class MyConnectionService extends ConnectionService {
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra("userAction", userAction); // So web app (if desired) could use this to automatically answer/decline the call (can read the intent using cordova-plugin-intent)
         intent.putExtra("payload", payload);
+        if (fromLockscreen) {
+            intent.putExtra("fromLockscreen", true);
+        }
         this.startActivity(intent);
     }
 

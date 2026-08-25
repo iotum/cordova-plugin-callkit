@@ -557,6 +557,8 @@ public class CordovaCall extends CordovaPlugin {
 
     @Override
     public void onDestroy() {
+        // Clear all callback contexts when the Activity/plugin is destroyed
+        callbackContextMap.clear();
         // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
         AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
         if (monitoring != null) {

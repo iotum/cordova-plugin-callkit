@@ -63,6 +63,10 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onAnswer() {
+        onAnswer(false);
+    }
+
+    void onAnswer(boolean fromLockscreen) {
         Log.d(MyConnectionService.TAG, "onAnswer()");
 
         answeredAtElapsed = SystemClock.elapsedRealtime();
@@ -76,7 +80,7 @@ class IncomingCallConnection extends CallConnection {
         // the microphone service type once RECORD_AUDIO is confirmed granted.
         this.startCallAudioService();
 
-        service.showWebApp("answerCall", payloadString);
+        service.showWebApp("answerCall", payloadString, fromLockscreen);
 
         // Note: emitEvent() will enqueue events until the web app is ready + a listener is registered
         Log.d(MyConnectionService.TAG, "Emitting CordovaCall answer event...");
