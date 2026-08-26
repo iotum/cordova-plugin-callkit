@@ -32,7 +32,11 @@ public class CallActionReceiver extends BroadcastReceiver {
 
         if (conn != null) {
             if (action.equals("declineCall")) {
-                conn.onReject();
+                if (conn instanceof IncomingCallConnection) {
+                    ((IncomingCallConnection) conn).onReject(intent.getBooleanExtra("fromLockscreen", false));
+                } else {
+                    conn.onReject();
+                }
             } else if (action.equals("answerCall")) {
                 if (conn instanceof IncomingCallConnection) {
                     ((IncomingCallConnection) conn).onAnswer(intent.getBooleanExtra("fromLockscreen", false));

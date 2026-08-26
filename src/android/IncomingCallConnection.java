@@ -89,11 +89,15 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onReject() {
+        onReject(false);
+    }
+
+    void onReject(boolean fromLockscreen) {
         Log.d(MyConnectionService.TAG, "onReject, call_uuid: " + callUUID);
         this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
         this.destroy();
 
-        service.showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
+        service.showWebApp("declineCall", payloadString, fromLockscreen); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
 
         CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
     }
