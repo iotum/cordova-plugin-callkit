@@ -63,6 +63,10 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onAnswer() {
+        onAnswer(false);
+    }
+
+    void onAnswer(boolean fromLockscreen) {
         Log.d(MyConnectionService.TAG, "onAnswer()");
 
         answeredAtElapsed = SystemClock.elapsedRealtime();
@@ -76,7 +80,7 @@ class IncomingCallConnection extends CallConnection {
         // the microphone service type once RECORD_AUDIO is confirmed granted.
         this.startCallAudioService();
 
-        service.showWebApp("answerCall", payloadString);
+        service.showWebApp("answerCall", payloadString, fromLockscreen);
 
         // Note: emitEvent() will enqueue events until the web app is ready + a listener is registered
         Log.d(MyConnectionService.TAG, "Emitting CordovaCall answer event...");
@@ -85,11 +89,15 @@ class IncomingCallConnection extends CallConnection {
 
     @Override
     public void onReject() {
+        onReject(false);
+    }
+
+    void onReject(boolean fromLockscreen) {
         Log.d(MyConnectionService.TAG, "onReject, call_uuid: " + callUUID);
         this.setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
         this.destroy();
 
-        service.showWebApp("declineCall", payloadString); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
+        service.showWebApp("declineCall", payloadString, fromLockscreen); // Controversial UX but doing so that we can tell the web app to reject the call (which may let the caller know it was declined)
 
         CordovaCall.emitEvent("reject", new PluginResult(PluginResult.Status.OK, payloadString));
     }
