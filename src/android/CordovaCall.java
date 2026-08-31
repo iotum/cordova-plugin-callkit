@@ -309,7 +309,7 @@ public class CordovaCall extends CordovaPlugin {
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
             callbackContextList.add(callbackContext1);
             ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>(enqueuedEvents);
-            for (final HashMap event : nextWebViewEvents) {
+            for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
                 String sessionId = (String) event.get("sessionId");
                 Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
                 // Skip a durable event whose call already connected or ended via the immediate

@@ -185,8 +185,8 @@ public class MyConnectionService extends ConnectionService {
             intent.putExtra("fromLockscreen", true);
         }
 
-        // Prefer launching through the already-running MainActivity's own Activity context (as
-        // CordovaCall.showMainActivityOnLockscreen() does), rather than this bare Service/ApplicationContext.
+        // Prefer launching through the already-running MainActivity's own Activity context, rather than
+        // this bare Service/ApplicationContext.
         // A Service-context startActivity() targeting a task that's already visible is only granted a
         // weaker background-activity-launch allowance (BAL_ALLOW_GRACE_PERIOD) by the OS, which forces
         // Android to spin up a brand-new MainActivity task/instance instead of reusing the visible one -
