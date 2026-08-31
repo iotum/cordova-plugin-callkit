@@ -11,10 +11,8 @@
     </js-module>
 
     <platform name="android">
-        <preference name="ANDROID_MINSDKVERSION" default="26" />
-
         <config-file parent="/manifest" target="AndroidManifest.xml">
-            <uses-sdk android:minSdkVersion="$ANDROID_MINSDKVERSION" />
+            <uses-sdk android:minSdkVersion="26" />
         </config-file>
 
         <config-file parent="/*" target="res/xml/config.xml">

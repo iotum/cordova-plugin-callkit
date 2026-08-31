@@ -101,11 +101,9 @@ public class AudioRouteMonitor {
             IntentFilter filter = new IntentFilter();
             filter.addAction(AudioManager.ACTION_HEADSET_PLUG);
             filter.addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
-                filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
-                filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-            }
+            filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+            filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 cordova.getActivity().registerReceiver(audioRouteReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -157,15 +155,8 @@ public class AudioRouteMonitor {
                 return CordovaCall.AudioRoute.SPEAKER;
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (hasWiredHeadsetConnected()) {
-                    return CordovaCall.AudioRoute.WIRED_HEADSET;
-                }
-            } else {
-                // Fallback to deprecated method for older Android versions
-                if (audioManager.isWiredHeadsetOn()) {
-                    return CordovaCall.AudioRoute.WIRED_HEADSET;
-                }
+            if (hasWiredHeadsetConnected()) {
+                return CordovaCall.AudioRoute.WIRED_HEADSET;
             }
 
             return CordovaCall.AudioRoute.EARPIECE;
@@ -176,23 +167,21 @@ public class AudioRouteMonitor {
     }
 
     private boolean hasWiredHeadsetConnected() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
-                for (AudioDeviceInfo device : devices) {
-                    int type = device.getType();
-                    if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                        type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                        type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                        type == AudioDeviceInfo.TYPE_USB_DEVICE) {
-                        Log.d(TAG, "Detected wired/USB headset: " + device.getProductName());
-                        return true;
-                    }
+        try {
+            AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            for (AudioDeviceInfo device : devices) {
+                int type = device.getType();
+                if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    type == AudioDeviceInfo.TYPE_USB_DEVICE) {
+                    Log.d(TAG, "Detected wired/USB headset: " + device.getProductName());
+                    return true;
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Error checking for wired headset: " + e.getMessage());
-                return audioManager.isWiredHeadsetOn();
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking for wired headset: " + e.getMessage());
+            return audioManager.isWiredHeadsetOn();
         }
         return false;
     }
