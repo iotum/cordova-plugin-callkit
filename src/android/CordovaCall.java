@@ -63,6 +63,7 @@ public class CordovaCall extends CordovaPlugin {
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
     private static ArrayList<HashMap> nextWebViewEvents = new ArrayList<HashMap>();
+    private static final Object nextWebViewEventsLock = new Object();
     private static CordovaInterface cordovaInterface;
     private static CordovaWebView cordovaWebView;
     private static Icon icon;
@@ -99,7 +100,9 @@ public class CordovaCall extends CordovaPlugin {
         Log.d(TAG, "emitDurableEvent: " + eventType + " sessionId: " + sessionId);
         HashMap event = createEnqueuedEvent(eventType, result);
         event.put("sessionId", sessionId);
-        nextWebViewEvents.add(event);
+        synchronized (nextWebViewEventsLock) {
+            nextWebViewEvents.add(event);
+        }
 
         ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
         for (final CallbackContext callbackContext : callbackContexts) {
@@ -113,7 +116,9 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     public static void discardNextWebViewEvents(String eventType, String sessionId) {
-        nextWebViewEvents.removeIf(event -> event.get("eventType").equals(eventType) && sessionId.equals(event.get("sessionId")));
+        synchronized (nextWebViewEventsLock) {
+            nextWebViewEvents.removeIf(event -> event.get("eventType").equals(eventType) && sessionId.equals(event.get("sessionId")));
+        }
     }
 
     private static HashMap createEnqueuedEvent(String eventType, PluginResult result) {
@@ -309,15 +314,18 @@ public class CordovaCall extends CordovaPlugin {
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
             callbackContextList.add(callbackContext1);
             ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>(enqueuedEvents);
-            for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
-                String sessionId = (String) event.get("sessionId");
-                Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
-                // Skip a durable event whose call already connected or ended via the immediate
-                // emitDurableEvent() delivery, so a fresh listener doesn't receive it a second time.
-                if (conn == null || conn.getState() == Connection.STATE_ACTIVE || conn.getState() == Connection.STATE_DISCONNECTED) {
-                    continue;
+            synchronized (nextWebViewEventsLock) {
+                for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
+                    String sessionId = (String) event.get("sessionId");
+                    Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
+                    // Skip a durable event whose call already connected or ended via the immediate
+                    // emitDurableEvent() delivery, so a fresh listener doesn't receive it a second time.
+                    if (conn == null || conn.getState() == Connection.STATE_ACTIVE || conn.getState() == Connection.STATE_DISCONNECTED) {
+                        continue;
+                    }
+                    eventsToDeliver.add(event);
                 }
-                eventsToDeliver.add(event);
+                nextWebViewEvents.removeIf(e -> e.get("eventType").equals(eventType));
             }
             for (final HashMap event : eventsToDeliver) {
                 if (event.get("eventType").equals(eventType)) {
@@ -332,7 +340,6 @@ public class CordovaCall extends CordovaPlugin {
                 }
             }
             enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
-            nextWebViewEvents.removeIf(e -> e.get("eventType").equals(eventType));
             return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);
