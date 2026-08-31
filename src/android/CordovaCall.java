@@ -62,6 +62,7 @@ public class CordovaCall extends CordovaPlugin {
     private String realCallTo;
     private static HashMap<String, ArrayList<CallbackContext>> callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
     private static ArrayList<HashMap> enqueuedEvents = new ArrayList<HashMap>();
+    private static ArrayList<HashMap> nextWebViewEvents = new ArrayList<HashMap>();
     private static CordovaInterface cordovaInterface;
     private static CordovaWebView cordovaWebView;
     private static Icon icon;
@@ -79,10 +80,7 @@ public class CordovaCall extends CordovaPlugin {
         ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
         if (callbackContexts.size() == 0) {
             Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
-            HashMap event = new HashMap();
-            event.put("eventType", eventType);
-            event.put("result", result);
-            enqueuedEvents.add(event);
+            enqueuedEvents.add(createEnqueuedEvent(eventType, result));
         }
         for (final CallbackContext callbackContext : callbackContexts) {
             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
@@ -92,6 +90,37 @@ public class CordovaCall extends CordovaPlugin {
                 }
             });
         }
+    }
+
+    // Persists the event (scoped to sessionId, surviving WebView recreation via registerEvent's
+    // replay below) while also attempting immediate delivery, so answering doesn't add latency
+    // when the current WebView survives to consume it.
+    public static void emitDurableEvent(String eventType, String sessionId, PluginResult result) {
+        Log.d(TAG, "emitDurableEvent: " + eventType + " sessionId: " + sessionId);
+        HashMap event = createEnqueuedEvent(eventType, result);
+        event.put("sessionId", sessionId);
+        nextWebViewEvents.add(event);
+
+        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
+        for (final CallbackContext callbackContext : callbackContexts) {
+            CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                public void run() {
+                    result.setKeepCallback(true);
+                    callbackContext.sendPluginResult(result);
+                }
+            });
+        }
+    }
+
+    public static void discardNextWebViewEvents(String eventType, String sessionId) {
+        nextWebViewEvents.removeIf(event -> event.get("eventType").equals(eventType) && sessionId.equals(event.get("sessionId")));
+    }
+
+    private static HashMap createEnqueuedEvent(String eventType, PluginResult result) {
+        HashMap event = new HashMap();
+        event.put("eventType", eventType);
+        event.put("result", result);
+        return event;
     }
 
     public static CordovaInterface getCordova() {
@@ -153,9 +182,14 @@ public class CordovaCall extends CordovaPlugin {
     }
 
     /**
-     * Makes the MainActivity visible on the lockscreen and brings it to the foreground.
-     * Call this when the user answers a call from the IncomingCallActivity so they land in
-     * the app without having to first dismiss the lockscreen.
+     * Makes the MainActivity visible on the lockscreen. Call this when the user answers a call from
+     * IncomingCallActivity so they land in the app without having to first dismiss the lockscreen.
+     *
+     * Deliberately does NOT also call startActivity() to bring MainActivity to the foreground - that's
+     * already done moments later by MyConnectionService.showWebApp() (which delivers the answer intent
+     * extras). Two near-simultaneous startActivity() calls targeting the same singleTop MainActivity
+     * race each other and can make Android spin up a duplicate instance instead of reusing the existing
+     * one, tearing down and recreating the whole Cordova WebView mid-answer.
      */
     public static void showMainActivityOnLockscreen() {
         CordovaInterface cordova = CordovaCall.getCordova();
@@ -175,10 +209,6 @@ public class CordovaCall extends CordovaPlugin {
                                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                     );
                 }
-
-                Intent launchIntent = new Intent(activity, activity.getClass());
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_NEW_TASK);
-                activity.startActivity(launchIntent);
             }
         });
     }
@@ -278,7 +308,18 @@ public class CordovaCall extends CordovaPlugin {
             CallbackContext callbackContext1 = this.callbackContext;
             ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
             callbackContextList.add(callbackContext1);
-            for (final HashMap event : enqueuedEvents) {
+            ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>(enqueuedEvents);
+            for (final HashMap event : nextWebViewEvents) {
+                String sessionId = (String) event.get("sessionId");
+                Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
+                // Skip a durable event whose call already connected or ended via the immediate
+                // emitDurableEvent() delivery, so a fresh listener doesn't receive it a second time.
+                if (conn == null || conn.getState() == Connection.STATE_ACTIVE || conn.getState() == Connection.STATE_DISCONNECTED) {
+                    continue;
+                }
+                eventsToDeliver.add(event);
+            }
+            for (final HashMap event : eventsToDeliver) {
                 if (event.get("eventType").equals(eventType)) {
                     Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
                     CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
@@ -291,6 +332,7 @@ public class CordovaCall extends CordovaPlugin {
                 }
             }
             enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
+            nextWebViewEvents.removeIf(e -> e.get("eventType").equals(eventType));
             return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);

@@ -1,9 +1,11 @@
 package com.dmarc.cordovacall;
 
+import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
@@ -177,13 +179,27 @@ public class MyConnectionService extends ConnectionService {
         }
 
         Intent intent = new Intent(context, mainActivity);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra("userAction", userAction); // So web app (if desired) could use this to automatically answer/decline the call (can read the intent using cordova-plugin-intent)
         intent.putExtra("payload", payload);
         if (fromLockscreen) {
             intent.putExtra("fromLockscreen", true);
         }
-        this.startActivity(intent);
+
+        // Prefer launching through the already-running MainActivity's own Activity context (as
+        // CordovaCall.showMainActivityOnLockscreen() does), rather than this bare Service/ApplicationContext.
+        // A Service-context startActivity() targeting a task that's already visible is only granted a
+        // weaker background-activity-launch allowance (BAL_ALLOW_GRACE_PERIOD) by the OS, which forces
+        // Android to spin up a brand-new MainActivity task/instance instead of reusing the visible one -
+        // tearing down and recreating the whole Cordova WebView mid-answer. An Activity-context launch
+        // isn't subject to that restriction and correctly reuses the existing task via onNewIntent.
+        CordovaInterface cordova = CordovaCall.getCordova();
+        Activity activity = cordova != null ? cordova.getActivity() : null;
+        if (activity != null) {
+            activity.runOnUiThread(() -> activity.startActivity(intent));
+        } else {
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            this.startActivity(intent);
+        }
     }
 
     // Returns the connection for the active session (or null if none).

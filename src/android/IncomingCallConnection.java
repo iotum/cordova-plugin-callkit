@@ -82,9 +82,8 @@ class IncomingCallConnection extends CallConnection {
 
         service.showWebApp("answerCall", payloadString, fromLockscreen);
 
-        // Note: emitEvent() will enqueue events until the web app is ready + a listener is registered
         Log.d(MyConnectionService.TAG, "Emitting CordovaCall answer event...");
-        CordovaCall.emitEvent("answer", new PluginResult(PluginResult.Status.OK, payloadString));
+        CordovaCall.emitDurableEvent("answer", sessionId, new PluginResult(PluginResult.Status.OK, payloadString));
     }
 
     @Override
@@ -121,6 +120,7 @@ class IncomingCallConnection extends CallConnection {
         int state = getState();
         if (state != Connection.STATE_ACTIVE && state != Connection.STATE_DISCONNECTED) {
             Log.w(MyConnectionService.TAG, "Answered call never connected within grace period, disconnecting stuck call, call_uuid: " + callUUID);
+            CordovaCall.discardNextWebViewEvents("answer", sessionId);
             onAbort();
         }
     }
@@ -143,6 +143,10 @@ class IncomingCallConnection extends CallConnection {
 
         if (state == Connection.STATE_ACTIVE || state == Connection.STATE_DISCONNECTED) {
             timeoutHandler.removeCallbacksAndMessages(null);
+        }
+
+        if (state == Connection.STATE_DISCONNECTED) {
+            CordovaCall.discardNextWebViewEvents("answer", sessionId);
         }
 
         super.onStateChanged(state);
