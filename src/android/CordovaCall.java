@@ -95,16 +95,19 @@ public class CordovaCall extends CordovaPlugin {
 
     // Persists the event (scoped to sessionId, surviving WebView recreation via registerEvent's
     // replay below) while also attempting immediate delivery, so answering doesn't add latency
-    // when the current WebView survives to consume it.
+    // when the current WebView survives to consume it. Queue insertion and the callback list
+    // snapshot are done under the same lock that guards registerEvent's callback registration
+    // and queue snapshot, so exactly one of the two paths delivers the event.
     public static void emitDurableEvent(String eventType, String sessionId, PluginResult result) {
         Log.d(TAG, "emitDurableEvent: " + eventType + " sessionId: " + sessionId);
         HashMap event = createEnqueuedEvent(eventType, result);
         event.put("sessionId", sessionId);
+        ArrayList<CallbackContext> callbackContexts;
         synchronized (nextWebViewEventsLock) {
             nextWebViewEvents.add(event);
+            callbackContexts = new ArrayList<CallbackContext>(CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>()));
         }
 
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
         for (final CallbackContext callbackContext : callbackContexts) {
             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                 public void run() {
@@ -311,10 +314,13 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("registerEvent")) {
             String eventType = args.getString(0);
             CallbackContext callbackContext1 = this.callbackContext;
-            ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
-            callbackContextList.add(callbackContext1);
             ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>(enqueuedEvents);
+            // Callback registration and the queue snapshot below are done under the same lock
+            // that guards emitDurableEvent()'s queue insertion and callback snapshot, so exactly
+            // one of the two paths delivers a given event instead of both.
             synchronized (nextWebViewEventsLock) {
+                ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
+                callbackContextList.add(callbackContext1);
                 for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
                     String sessionId = (String) event.get("sessionId");
                     Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
