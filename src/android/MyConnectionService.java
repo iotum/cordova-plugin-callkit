@@ -194,8 +194,15 @@ public class MyConnectionService extends ConnectionService {
         // isn't subject to that restriction and correctly reuses the existing task via onNewIntent.
         CordovaInterface cordova = CordovaCall.getCordova();
         Activity activity = cordova != null ? cordova.getActivity() : null;
-        if (activity != null) {
-            activity.runOnUiThread(() -> activity.startActivity(intent));
+        if (activity != null && !activity.isFinishing() && !activity.isDestroyed()) {
+            activity.runOnUiThread(() -> {
+                if (!activity.isFinishing() && !activity.isDestroyed()) {
+                    activity.startActivity(intent);
+                } else {
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    this.startActivity(intent);
+                }
+            });
         } else {
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             this.startActivity(intent);
