@@ -352,6 +352,13 @@ public class CordovaCall extends CordovaPlugin {
                 Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
                 CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
                     public void run() {
+                        String sessionId = (String) event.get("sessionId");
+                        if (sessionId != null) {
+                            Connection conn = MyConnectionService.getConnection(sessionId);
+                            if (conn == null || conn.getState() == Connection.STATE_ACTIVE || conn.getState() == Connection.STATE_DISCONNECTED) {
+                                return;
+                            }
+                        }
                         PluginResult result = (PluginResult) event.get("result");
                         result.setKeepCallback(true);
                         callbackContext1.sendPluginResult(result);
