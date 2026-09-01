@@ -334,6 +334,9 @@ public class CordovaCall extends CordovaPlugin {
                 }
                 enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
                 for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
+                    if (!event.get("eventType").equals(eventType)) {
+                        continue;
+                    }
                     String sessionId = (String) event.get("sessionId");
                     Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
                     // Skip a durable event whose call already connected or ended via the immediate
