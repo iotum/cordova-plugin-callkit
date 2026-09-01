@@ -78,10 +78,15 @@ public class CordovaCall extends CordovaPlugin {
 
     public static void emitEvent(String eventType, PluginResult result) {
         Log.d(TAG, "emitEvent: " + eventType + " result " + result.toString());
-        ArrayList<CallbackContext> callbackContexts = CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>());
-        if (callbackContexts.size() == 0) {
-            Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
-            enqueuedEvents.add(createEnqueuedEvent(eventType, result));
+        ArrayList<CallbackContext> callbackContexts;
+        // Locked so a registerEvent() racing this can't miss the enqueue below and also skip
+        // delivering to the callback snapshot it just registered (see registerEvent()).
+        synchronized (nextWebViewEventsLock) {
+            callbackContexts = new ArrayList<CallbackContext>(CordovaCall.getCallbackContexts().computeIfAbsent(eventType, k -> new ArrayList<>()));
+            if (callbackContexts.size() == 0) {
+                Log.d(TAG, "nothing yet listening for CordovaCall event: " + eventType + " enqueuing message for later...");
+                enqueuedEvents.add(createEnqueuedEvent(eventType, result));
+            }
         }
         for (final CallbackContext callbackContext : callbackContexts) {
             CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
@@ -96,8 +101,8 @@ public class CordovaCall extends CordovaPlugin {
     // Persists the event (scoped to sessionId, surviving WebView recreation via registerEvent's
     // replay below) while also attempting immediate delivery, so answering doesn't add latency
     // when the current WebView survives to consume it. Queue insertion and the callback list
-    // snapshot are done under the same lock that guards registerEvent's callback registration
-    // and queue snapshot, so exactly one of the two paths delivers the event.
+    // snapshot are done under the same lock that guards registerEvent's and emitEvent's callback
+    // registration and queue snapshot, so exactly one path delivers the event.
     public static void emitDurableEvent(String eventType, String sessionId, PluginResult result) {
         Log.d(TAG, "emitDurableEvent: " + eventType + " sessionId: " + sessionId);
         HashMap event = createEnqueuedEvent(eventType, result);
@@ -314,13 +319,20 @@ public class CordovaCall extends CordovaPlugin {
         } else if (action.equals("registerEvent")) {
             String eventType = args.getString(0);
             CallbackContext callbackContext1 = this.callbackContext;
-            ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>(enqueuedEvents);
-            // Callback registration and the queue snapshot below are done under the same lock
-            // that guards emitDurableEvent()'s queue insertion and callback snapshot, so exactly
-            // one of the two paths delivers a given event instead of both.
+            ArrayList<HashMap> eventsToDeliver = new ArrayList<HashMap>();
+            // Callback registration and both queue snapshots/removals below are done under the
+            // same lock that guards emitEvent()'s and emitDurableEvent()'s enqueue and callback
+            // snapshot, so exactly one of the two paths delivers a given event instead of neither
+            // or both.
             synchronized (nextWebViewEventsLock) {
                 ArrayList<CallbackContext> callbackContextList = callbackContextMap.computeIfAbsent(eventType, k -> new ArrayList<>());
                 callbackContextList.add(callbackContext1);
+                for (final HashMap event : new ArrayList<HashMap>(enqueuedEvents)) {
+                    if (event.get("eventType").equals(eventType)) {
+                        eventsToDeliver.add(event);
+                    }
+                }
+                enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
                 for (final HashMap event : new ArrayList<HashMap>(nextWebViewEvents)) {
                     String sessionId = (String) event.get("sessionId");
                     Connection conn = sessionId == null ? null : MyConnectionService.getConnection(sessionId);
@@ -334,18 +346,15 @@ public class CordovaCall extends CordovaPlugin {
                 nextWebViewEvents.removeIf(e -> e.get("eventType").equals(eventType));
             }
             for (final HashMap event : eventsToDeliver) {
-                if (event.get("eventType").equals(eventType)) {
-                    Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
-                    CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
-                        public void run() {
-                            PluginResult result = (PluginResult) event.get("result");
-                            result.setKeepCallback(true);
-                            callbackContext1.sendPluginResult(result);
-                        }
-                    });
-                }
+                Log.d(TAG, "emitting enqueued event: " + event.toString() + " now that a listener is registered");
+                CordovaCall.getCordova().getThreadPool().execute(new Runnable() {
+                    public void run() {
+                        PluginResult result = (PluginResult) event.get("result");
+                        result.setKeepCallback(true);
+                        callbackContext1.sendPluginResult(result);
+                    }
+                });
             }
-            enqueuedEvents.removeIf(e -> e.get("eventType").equals(eventType));
             return true;
         } else if (action.equals("setIcon")) {
             String iconName = args.getString(0);
@@ -614,7 +623,9 @@ public class CordovaCall extends CordovaPlugin {
     public void onDestroy() {
         // Swap instances during teardown to avoid mutating an in-use HashMap from other threads
         callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
-        enqueuedEvents.clear();
+        synchronized (nextWebViewEventsLock) {
+            enqueuedEvents.clear();
+        }
         // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
         AudioRouteMonitor monitoring = AudioRouteMonitor.getInstance();
         if (monitoring != null) {
