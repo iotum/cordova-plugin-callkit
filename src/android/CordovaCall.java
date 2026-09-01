@@ -624,9 +624,10 @@ public class CordovaCall extends CordovaPlugin {
 
     @Override
     public void onDestroy() {
-        // Swap instances during teardown to avoid mutating an in-use HashMap from other threads
-        callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
+        // Reset under the same lock registerEvent() uses, so a racing registration from a new
+        // WebView can't be silently dropped by this replacing the map right after it's added to.
         synchronized (nextWebViewEventsLock) {
+            callbackContextMap = new HashMap<String, ArrayList<CallbackContext>>();
             enqueuedEvents.clear();
         }
         // Ensure audio route monitoring is stopped when the Activity/plugin is destroyed
