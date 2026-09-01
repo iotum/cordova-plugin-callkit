@@ -44,7 +44,7 @@ public class IncomingCallActivity extends AppCompatActivity {
                 int newState = intent.getIntExtra("state", 0);
                 if (newState == Connection.STATE_DISCONNECTED) {
                     Log.d(TAG, "closing activity as call was disconnected");
-                    finishAndRemoveTask();
+                    finishSelf();
                 }
             }
         }
@@ -67,11 +67,11 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         if (connection == null) {
             Log.d(TAG, "Exiting, connection no longer exists.");
-            finishAndRemoveTask();
+            finishSelf();
             return;
         } else if (connection.getState() == Connection.STATE_DISCONNECTED) {
             Log.d(TAG, "Exiting, connection is disconnected");
-            finishAndRemoveTask();
+            finishSelf();
             return;
         }
 
@@ -271,7 +271,7 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         CordovaCall.showMainActivityOnLockscreen();
 
-        this.finishAndRemoveTask();
+        this.finishSelf();
     }
 
     private void onDeclineClicked() {
@@ -283,6 +283,18 @@ public class IncomingCallActivity extends AppCompatActivity {
         declineIntent.putExtra("fromLockscreen", true);
         this.sendBroadcast(declineIntent);
 
-        this.finishAndRemoveTask();
+        this.finishSelf();
+    }
+
+    // finishAndRemoveTask() would also tear down MainActivity's task when the app is already running and
+    // IncomingCallActivity was pushed onto that same task (matching affinity), forcing MainActivity to be
+    // recreated from scratch right after. Only remove the whole task when this activity is its root (the
+    // app-not-running / lockscreen case), otherwise just finish this activity and leave the task alone.
+    private void finishSelf() {
+        if (isTaskRoot()) {
+            finishAndRemoveTask();
+        } else {
+            finish();
+        }
     }
 }

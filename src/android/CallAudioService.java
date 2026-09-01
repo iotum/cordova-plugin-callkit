@@ -8,6 +8,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -23,6 +25,7 @@ import androidx.core.content.ContextCompat;
 public class CallAudioService extends Service {
     private static final String TAG = "CallAudioService";
     private static int currentNotificationId = -1;
+    private AudioFocusRequest audioFocusRequest;
 
     public static int getCurrentNotificationId() {
         return currentNotificationId;
@@ -88,6 +91,21 @@ public class CallAudioService extends Service {
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
 
+        // Self-managed ConnectionServices are responsible for their own audio focus - Telecom does not
+        // request it on our behalf. Without this, WebView's own WebRTC audio session (which negotiates
+        // focus independently) can race against our setMode() call above, especially on calls answered
+        // shortly after a prior call's audio session tore down, leaving the mic in a bad state.
+        Log.d(TAG, "Requesting audio focus...");
+        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+        audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                .setAudioAttributes(audioAttributes)
+                .build();
+        int focusResult = audioManager.requestAudioFocus(audioFocusRequest);
+        Log.d(TAG, "requestAudioFocus result: " + focusResult);
+
         // Don't auto restart if the app crashes, or the service is killed, etc.
         // as this may result in the app having no telecom connection but an orphaned CallAudioService.
         return START_NOT_STICKY;
@@ -102,8 +120,14 @@ public class CallAudioService extends Service {
 
         currentNotificationId = -1;
 
-        Log.d(TAG, "Returning audio mode to MODE_NORMAL");
         AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioFocusRequest != null) {
+            Log.d(TAG, "Abandoning audio focus...");
+            audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            audioFocusRequest = null;
+        }
+
+        Log.d(TAG, "Returning audio mode to MODE_NORMAL");
         audioManager.setMode(AudioManager.MODE_NORMAL);
     }
 

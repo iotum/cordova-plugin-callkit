@@ -13,10 +13,10 @@ This document summarizes the implementation of the `audioRouteChange` event in t
 - **Concurrent Calls**: Properly handles multiple active calls with shared audio route monitoring
 
 ### ✅ Enhanced Device Detection
-- **Modern Android API**: Uses `AudioManager.getDevices()` with `AudioDeviceInfo` for reliable detection (API 23+)
+- **Modern Android API**: Uses `AudioManager.getDevices()` with `AudioDeviceInfo` for reliable detection, unconditionally (API 23+ is guaranteed by the plugin's minSdkVersion 26)
 - **USB-C & USB-A Support**: Detects USB headsets that older methods miss
 - **Wired Headset Types**: Comprehensive detection including `TYPE_WIRED_HEADSET`, `TYPE_WIRED_HEADPHONES`, `TYPE_USB_HEADSET`
-- **Backward Compatibility**: Falls back to deprecated methods for Android < API 23
+- **Backward Compatibility**: The API 21/23 version-gated fallback paths (deprecated `isWiredHeadsetOn()` for route detection, conditional broadcast filters) have been removed now that minSdkVersion is 26
 - **Multiple Call Support**: Audio route monitoring scales with active call count
 
 ### ✅ Standardized Constants
@@ -139,10 +139,10 @@ CordovaCall.getAudioRoute(
 ### Android Implementation
 - **File**: `src/android/CordovaCall.java`
 - **Detection Method**: Hybrid approach using:
-  - Modern `AudioManager.getDevices()` API with `AudioDeviceInfo` (API 23+)
+  - Modern `AudioManager.getDevices()` API with `AudioDeviceInfo` (API 23+, always available now that minSdkVersion is 26)
   - `BroadcastReceiver` for physical device changes (headset plug, Bluetooth, USB)
   - `Connection.onCallAudioStateChanged()` for programmatic changes
-  - Fallback to deprecated `isWiredHeadsetOn()` for older Android versions
+  - The API 21/23 version-gated fallback paths have been removed; `isWiredHeadsetOn()` is now only used as an exception-handling fallback, not a version fallback
 - **USB Support**: Enhanced detection for USB-C headsets, USB-A adapters, and USB audio devices
 - **Concurrent Calls**: Active call counting ensures monitoring starts/stops appropriately
 - **Integration**: Works with `MyConnectionService.java` for complete coverage
@@ -176,10 +176,10 @@ The implementation has been designed to capture:
 - ✅ iOS CallKit route switching
 - ✅ System-initiated route changes
 - ✅ Multiple concurrent call scenarios
-- ✅ Modern Android device compatibility (API 23+)
+- ✅ Modern Android device compatibility (minSdkVersion 26+)
 
 ---
 
-*Implementation updated: March 2026*
-*Supports: Android API 23+ (with fallback to API 21+), iOS 10+*
+*Implementation updated: August 2026*
+*Supports: Android API 26+ (minSdkVersion raised from 23; API 21 fallback path removed from compatibility scope), iOS 10+*
 *Enhanced: Modern Android API support, USB-C detection, concurrent call handling*
