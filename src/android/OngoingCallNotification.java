@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -25,7 +26,7 @@ public class OngoingCallNotification {
     private Context context;
     private NotificationManager notificationManager;
 
-    private static final String NOTIFICATION_CHANNEL_ID = "ongoing_calls";
+    static final String NOTIFICATION_CHANNEL_ID = "ongoing_calls";
 
     public OngoingCallNotification(Context context, String peerName, String sessionId) {
         this(context, peerName, sessionId, new Random().nextInt(100000) + 1);
@@ -64,6 +65,10 @@ public class OngoingCallNotification {
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it (via notification manager or stopping associated foreground service)
+
+        Bundle notificationExtras = new Bundle();
+        notificationExtras.putString("sessionId", this.sessionId); // Read back when scanning for orphaned call notifications
+        builder.addExtras(notificationExtras);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating call-style notification for on-going call (as this is supported by the device)...");
