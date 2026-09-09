@@ -6,12 +6,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
+import android.service.notification.StatusBarNotification;
 import android.telecom.CallAudioState;
 import android.telecom.Connection;
 import android.telecom.ConnectionRequest;
@@ -234,6 +236,25 @@ public class MyConnectionService extends ConnectionService {
 
     public static Connection getConnection(String sessionId) {
         return connectionMap.get(sessionId);
+    }
+
+    // connectionMap is in-memory only, so after a process restart (crash, etc.) it starts out empty
+    // while a stale incoming/ongoing-call notification from before the restart can still be on screen.
+    // Cancel any such notification whose sessionId (stashed in its extras) has no matching connection.
+    public static void cancelOrphanedCallNotifications(Context context) {
+        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        for (StatusBarNotification sbn : notificationManager.getActiveNotifications()) {
+            String channelId = sbn.getNotification().getChannelId();
+            if (!IncomingCallNotification.NOTIFICATION_CHANNEL_ID.equals(channelId)
+                    && !OngoingCallNotification.NOTIFICATION_CHANNEL_ID.equals(channelId)) {
+                continue;
+            }
+            String sessionId = sbn.getNotification().extras.getString("sessionId");
+            if (sessionId == null || connectionMap.get(sessionId) == null) {
+                Log.d(TAG, "Cancelling orphaned call notification, id: " + sbn.getId() + ", sessionId: " + sessionId);
+                notificationManager.cancel(sbn.getId());
+            }
+        }
     }
 
     // Returns true if any connection in the map is in a state that requires CallAudioService to remain running:

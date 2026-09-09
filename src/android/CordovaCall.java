@@ -162,6 +162,8 @@ public class CordovaCall extends CordovaPlugin {
 
         PhoneAccountManager.getPhoneAccount(context); // Ensure PhoneAccount is created and registered if not already
 
+        MyConnectionService.cancelOrphanedCallNotifications(context);
+
         this.tm = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
 
         // Initialize AudioManager for audio route change monitoring

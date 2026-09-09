@@ -1,6 +1,7 @@
 package com.dmarc.cordovacall;
 
 import android.app.ComponentCaller;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -34,6 +35,7 @@ public class IncomingCallActivity extends AppCompatActivity {
     private int callerNameViewID;
 
     private String sessionId; // sessionId of the ringing call associated with this acivity
+    private int notificationID; // ID of the incoming-call notification associated with this activity, so it can be dismissed if orphaned
 
     private final BroadcastReceiver callStateReceiver = new BroadcastReceiver() {
         @Override
@@ -55,6 +57,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         this.sessionId = this.getIntent().getStringExtra("sessionId");
+        this.notificationID = this.getIntent().getIntExtra("notificationID", -1);
 
         IntentFilter filter = new IntentFilter("connection_state_changed");
 
@@ -67,10 +70,12 @@ public class IncomingCallActivity extends AppCompatActivity {
 
         if (connection == null) {
             Log.d(TAG, "Exiting, connection no longer exists.");
+            this.cancelOrphanedNotification();
             finishSelf();
             return;
         } else if (connection.getState() == Connection.STATE_DISCONNECTED) {
             Log.d(TAG, "Exiting, connection is disconnected");
+            this.cancelOrphanedNotification();
             finishSelf();
             return;
         }
@@ -267,6 +272,7 @@ public class IncomingCallActivity extends AppCompatActivity {
         answerIntent.setAction("answerCall");
         answerIntent.putExtra("sessionId", this.sessionId);
         answerIntent.putExtra("fromLockscreen", true);
+        answerIntent.putExtra("notificationID", this.notificationID);
         this.sendBroadcast(answerIntent);
 
         CordovaCall.showMainActivityOnLockscreen();
@@ -281,9 +287,18 @@ public class IncomingCallActivity extends AppCompatActivity {
         declineIntent.setAction("declineCall");
         declineIntent.putExtra("sessionId", this.sessionId);
         declineIntent.putExtra("fromLockscreen", true);
+        declineIntent.putExtra("notificationID", this.notificationID);
         this.sendBroadcast(declineIntent);
 
         this.finishSelf();
+    }
+
+    // Fallback for when the connection is already gone by the time this activity is shown/tapped -
+    // the notification would otherwise be left orphaned on screen since nothing else will dismiss it.
+    private void cancelOrphanedNotification() {
+        if (this.notificationID == -1) return;
+        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationManager.cancel(this.notificationID);
     }
 
     // finishAndRemoveTask() would also tear down MainActivity's task when the app is already running and

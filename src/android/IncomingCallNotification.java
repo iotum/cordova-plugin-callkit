@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -29,7 +30,7 @@ public class IncomingCallNotification {
     private String sessionId;
     private NotificationManager notificationManager;
 
-    private static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
+    static final String NOTIFICATION_CHANNEL_ID = "incoming_calls";
 
     public IncomingCallNotification(String pushMessagePayload, Context context, String sessionId) {
         this.pushMessagePayload = pushMessagePayload;
@@ -52,6 +53,7 @@ public class IncomingCallNotification {
         answerActivityIntent.putExtra("sessionId", this.sessionId);
         answerActivityIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
         answerActivityIntent.putExtra("autoAnswer", true);
+        answerActivityIntent.putExtra("notificationID", this.notificationID);
         answerActivityIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         PendingIntent answerPendingIntent = PendingIntent.getActivity(
                 this.context, 2, answerActivityIntent,
@@ -85,6 +87,10 @@ public class IncomingCallNotification {
                 .setSound(this.getRingtoneURI()) // For compatibility with Android 8.0 and less. (normally set through channel)
                 .setOngoing(true); // Can't be "dismissed" by the user, app will handle closing it
 
+        Bundle notificationExtras = new Bundle();
+        notificationExtras.putString("sessionId", this.sessionId); // Read back when scanning for orphaned call notifications
+        builder.addExtras(notificationExtras);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Log.d(TAG, "Creating call-style notification (as this is supported by the device)...");
             Person callerPerson = new Person.Builder()
@@ -99,6 +105,7 @@ public class IncomingCallNotification {
             Intent fullScreenIntent = new Intent(this.context, IncomingCallActivity.class);
             fullScreenIntent.putExtra("sessionId", this.sessionId);
             fullScreenIntent.putExtra("pushMessagePayload", this.pushMessagePayload);
+            fullScreenIntent.putExtra("notificationID", this.notificationID);
             fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
             PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
                     this.context, 0, fullScreenIntent,

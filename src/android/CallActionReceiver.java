@@ -1,5 +1,6 @@
 package com.dmarc.cordovacall;
 
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -48,6 +49,16 @@ public class CallActionReceiver extends BroadcastReceiver {
             }
         } else {
             Log.d(TAG, "Exiting, connection no longer exists. sessionId: " + sessionId);
+            if (action.equals("declineCall") || action.equals("answerCall")) {
+                // The connection map is in-memory only and doesn't survive the app process dying
+                // (e.g. a crash) with the incoming-call notification left orphaned on screen. Fall
+                // back to cancelling it directly by ID so Decline/Answer still dismiss it in that case.
+                int notificationID = intent.getIntExtra("notificationID", -1);
+                if (notificationID != -1) {
+                    NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                    notificationManager.cancel(notificationID);
+                }
+            }
         }
     }
 }
