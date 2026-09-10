@@ -1,3 +1,5 @@
+#import <Cordova/Cordova.h>
+#import <Foundation/Foundation.h>
 #import <SocketRocket/SocketRocket.h>
 
 @interface WebSocketAdvanced: NSObject <SRWebSocketDelegate>

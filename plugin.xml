@@ -101,6 +101,7 @@
 
         <framework src="PushKit.framework" />
         <framework src="CallKit.framework" />
+        <framework src="WebKit.framework" />
         <podspec>
             <config></config>
             <pods use-frameworks="true">
