@@ -1,5 +1,7 @@
 #import "CordovaCall.h"
-#import <Cordova/CDV.h>
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import "WebSocketAdvanced.h"
 #import <SocketRocket/SocketRocket.h>
