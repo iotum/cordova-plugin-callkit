@@ -269,6 +269,21 @@ public class MyConnectionService extends ConnectionService {
         return false;
     }
 
+    // Returns true if there is any active or ongoing connection (new, ringing, dialing, active, or holding).
+    public static boolean hasOngoingConnection() {
+        for (Connection conn : connectionMap.values()) {
+            int state = conn.getState();
+            if (state == Connection.STATE_NEW
+                    || state == Connection.STATE_RINGING
+                    || state == Connection.STATE_DIALING
+                    || state == Connection.STATE_ACTIVE
+                    || state == Connection.STATE_HOLDING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void onConnectionDisconnected(String sessionId) {
         Log.d(TAG, "Removing CallConnection from connectionMap, sessionId: " + sessionId);
         connectionMap.remove(sessionId);

@@ -172,6 +172,10 @@ public class CordovaCall extends CordovaPlugin {
         instance = this;
 
         AudioRouteMonitor.setInstance(new AudioRouteMonitor(cordova, this.audioManager));
+
+        if (MyConnectionService.hasOngoingConnection()) {
+            showMainActivityOnLockscreen();
+        }
     }
 
     public void setMainActivityInForeground(boolean isInForeground) {
@@ -210,11 +214,12 @@ public class CordovaCall extends CordovaPlugin {
         CordovaInterface cordova = CordovaCall.getCordova();
         if (cordova == null) return;
         Activity activity = cordova.getActivity();
-        if (activity == null) return;
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
 
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     activity.setShowWhenLocked(true);
                     activity.setTurnScreenOn(true);
