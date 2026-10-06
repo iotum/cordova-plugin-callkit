@@ -1342,11 +1342,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
             return;
         }
-        NSString *groupedWithSessionId = [self sessionIdForUUID:action.callUUIDToGroupWith];
         NSDictionary *resultDict = @{
             @"message": @"group event called successfully",
-            @"sessionId": sessionId,
-            @"groupedWithSessionId": groupedWithSessionId ?: [NSNull null]
+            @"groupedWithSessionId": sessionId ?: [NSNull null]
         };
         for (id callbackId in callbackIds[@"group"]) {
             CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict];
