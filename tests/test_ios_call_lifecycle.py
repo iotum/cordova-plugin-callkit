@@ -18,6 +18,9 @@ BOOL enableDTMF = YES, hasVideo = NO;
 NSString *callBackUrl;
 NSString *ANSWER_ERROR_CALL_ENDED = @"call ended";
 NSMutableDictionary *callbackIds;
+NSMutableArray *pendingCallResponses;
+NSDictionary *pendingCallFromRecents;
+NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 
 @interface CDVPluginResult : NSObject
 @property int status;
@@ -99,6 +102,8 @@ NSMutableDictionary *callbackIds;
 @property NSMutableArray *reports, *ended, *transactions;
 @property (copy) void (^reportCompletion)(NSError *);
 @property NSError *transactionError;
+@property BOOL deferTransactionCompletion;
+@property (copy) void (^transactionCompletion)(NSError *);
 - (void)reportNewIncomingCallWithUUID:(NSUUID *)uuid update:(CXCallUpdate *)update
                          completion:(void (^)(NSError *))completion;
 - (void)reportCallWithUUID:(NSUUID *)uuid endedAtDate:(NSDate *)date reason:(int)reason;
@@ -117,7 +122,12 @@ NSMutableDictionary *callbackIds;
     [self.ended addObject:uuid];
 }
 - (void)requestTransaction:(CXTransaction *)transaction completion:(void (^)(NSError *))completion {
-    [self.transactions addObject:transaction]; completion(self.transactionError);
+    [self.transactions addObject:transaction];
+    if (self.deferTransactionCompletion) {
+        self.transactionCompletion = completion;
+    } else {
+        completion(self.transactionError);
+    }
 }
 @end
 
@@ -151,6 +161,7 @@ typedef NSString *PKPushType;
 - (void)logMessage:(NSString *)message;
 - (CXCall *)callForSessionId:(NSString *)sessionId;
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId;
+- (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId;
 @end
 @implementation CordovaCall
 - (instancetype)init {
@@ -160,6 +171,7 @@ typedef NSString *PKPushType;
     self.VoIPPushCallbackId = @"push"; return self;
 }
 - (void)logMessage:(NSString *)message {}
+- (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId {}
 - (CXCall *)callForSessionId:(NSString *)sessionId { return self.observedCall; }
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId {
     [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
@@ -184,6 +196,7 @@ static PKPushPayload *push(void) {
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         callbackIds = [NSMutableDictionary new];
+        pendingCallResponses = [NSMutableArray new];
         NSString *scenario = @(argv[1]);
         CordovaCall *p = [CordovaCall new];
         if ([scenario isEqual:@"report-answer-retry"]) {
@@ -200,6 +213,31 @@ int main(int argc, const char *argv[]) {
             [p _settleAnswerWaitersForSessionId:@"session" errorMessage:nil];
             check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_OK, @"first resolves");
             check([p.commandDelegate.results[@"retry"] status] == CDVCommandStatus_OK, @"retry resolves");
+        } else if ([scenario isEqual:@"retry-after-activation-empty-observer"] ||
+                   [scenario isEqual:@"retry-after-activation-unconnected-observer"]) {
+            answer(p, @"first"); p.provider.reportCompletion(nil);
+            CXAnswerCallAction *action = [p.provider.transactions[0] action];
+            [p.activeCalls[@"session"][@"pendingActivateAudioSessionEmits"]
+                addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
+            answer(p, @"in-flight");
+            check(!p.commandDelegate.results[@"first"] && !p.commandDelegate.results[@"in-flight"],
+                @"waiters stay pending until activation");
+            [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                source:@"didActivateAudioSession"];
+            check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_OK, @"first resolves");
+            check([p.commandDelegate.results[@"in-flight"] status] == CDVCommandStatus_OK, @"in-flight retry resolves");
+            check([p.activeCalls[@"session"][@"pendingActivateAudioSessionEmits"] count] == 0,
+                @"activation drained");
+            if ([scenario isEqual:@"retry-after-activation-unconnected-observer"]) {
+                p.observedCall = [CXCall new];
+                p.observedCall.UUID = action.callUUID;
+            }
+            answer(p, @"after-activation");
+            check(p.commandDelegate.results[@"after-activation"] != nil, @"retry settles without observer connection");
+            check([p.commandDelegate.results[@"after-activation"] status] == CDVCommandStatus_OK, @"retry succeeds");
+            check(p.provider.reports.count == 1, @"no new report");
+            check(p.provider.transactions.count == 1, @"no new answer action");
+            check(pendingCallResponses.count == 0, @"no duplicate UI answer event");
         } else if ([scenario isEqual:@"report-failure"]) {
             answer(p, @"first");
             p.provider.reportCompletion([NSError errorWithDomain:@"test" code:1 userInfo:nil]);
@@ -211,6 +249,20 @@ int main(int argc, const char *argv[]) {
             answer(p, @"first"); p.provider.reportCompletion(nil);
             check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_ERROR, @"transaction failure rejects");
             check(![[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"not falsely ended");
+        } else if ([scenario isEqual:@"transaction-failure-after-end"]) {
+            p.provider.deferTransactionCompletion = YES;
+            answer(p, @"first"); p.provider.reportCompletion(nil);
+            answer(p, @"retry");
+            p.observedCall = [CXCall new];
+            p.observedCall.hasEnded = YES;
+            p.observedCall.hasConnected = YES;
+            p.provider.transactionCompletion([NSError errorWithDomain:@"test" code:2 userInfo:nil]);
+            for (NSString *callbackId in @[@"first", @"retry"]) {
+                CDVPluginResult *result = p.commandDelegate.results[callbackId];
+                check(result.status == CDVCommandStatus_ERROR, @"ended transaction rejects");
+                check([result.value[@"callEnded"] boolValue], @"ended flag");
+                check([result.value[@"message"] isEqual:ANSWER_ERROR_CALL_ENDED], @"ended message");
+            }
         } else if ([scenario isEqual:@"dismiss-during-report"]) {
             answer(p, @"first"); [p _dismissRingingCall:@"session"];
             p.provider.reportCompletion(nil);
@@ -290,6 +342,8 @@ METHODS = [
     "_requestAnswerCallActionForSessionId:",
     "_hasPendingAnswerEmitForSessionId:",
     "_settleAnswerWaitersForSessionId:",
+    "processPendingActivateEmitsSkippingTypes:",
+    "resolveCommandForSessionId:",
     "_removeEndedCallForSessionId:",
     "_dismissRingingCall:",
     "_reportAndEndDummyCall",
@@ -331,6 +385,15 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_transaction_failure(self):
         self.run_scenario("transaction-failure")
+
+    def test_retry_after_activation_empty_observer(self):
+        self.run_scenario("retry-after-activation-empty-observer")
+
+    def test_retry_after_activation_unconnected_observer(self):
+        self.run_scenario("retry-after-activation-unconnected-observer")
+
+    def test_transaction_failure_after_end(self):
+        self.run_scenario("transaction-failure-after-end")
 
     def test_dismiss_during_report(self):
         self.run_scenario("dismiss-during-report")

@@ -501,7 +501,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
         return;
     }
-    if (call.hasConnected) {
+    if ([entry[@"answerActivationCompleted"] boolValue] || call.hasConnected) {
         if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
             [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
         }
@@ -532,7 +532,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
             return;
         }
-        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:currentCall.hasEnded ? ANSWER_ERROR_CALL_ENDED : [error localizedDescription]];
     }];
 }
 
@@ -1169,6 +1169,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
             if ([eventType isEqualToString:@"answer"]) {
                 // Answered and CallKit activated the audio session: the call's media can be created now
+                self.activeCalls[sessionId][@"answerActivationCompleted"] = @YES;
                 [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
             }
 
@@ -1628,6 +1629,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"reportSucceeded": @NO,
         @"pendingAnswer": @NO,
         @"answerRequested": @NO,
+        @"answerActivationCompleted": @NO,
         @"answerWaiters": [NSMutableArray array],
         @"allowUnmute": @YES
     } mutableCopy];
