@@ -1580,6 +1580,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"_dismissRingingCall"];
 
     CXCall *call = [self callForSessionId:sessionId];
+    if ([self.activeCalls[sessionId][@"answerActivationCompleted"] boolValue]) {
+        return NO;
+    }
     if ((call && !call.hasConnected) || (!call && [self.activeCalls[sessionId][@"reportSucceeded"] boolValue])) {
         NSUUID *callUUID = call.UUID ?: self.activeCalls[sessionId][@"callUUID"];
         [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
