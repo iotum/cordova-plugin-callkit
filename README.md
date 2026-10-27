@@ -42,6 +42,13 @@ the call to CallKit if needed, then requests a `CXAnswerCallAction`, so CallKit 
 audio stays disabled until `didActivateAudioSession`). `success` fires once the audio session is active for the
 answered call; create media then. Do not wait for WebRTC's `audioSessionDidStartPlayOrRecord`, which only fires once a
 peer connection exists. A programmatic answer does not emit the `answer` event.
+Once an incoming-call report succeeds, answers reuse its UUID even if CallKit's call observer has not updated yet.
+
+# Lifecycle regression tests
+
+On macOS with Xcode command-line tools, run `python3 tests/test_ios_call_lifecycle.py -v`.
+The tests compile the plugin's lifecycle methods against deterministic CallKit/PushKit doubles using Foundation.
+They do not replace device testing of CallKit audio activation and push delivery.
 
 # Conclusion
 

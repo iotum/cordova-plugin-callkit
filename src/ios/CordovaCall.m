@@ -391,6 +391,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             completion(error, NO);
             return;
         }
+        self.activeCalls[sessionId][@"reportSucceeded"] = @YES;
         // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
         // end the call immediately now that CallKit has registered it.
         // This prevents the dismiss being silently dropped during cold launch.
@@ -449,7 +450,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
 
     BOOL needsReport = NO;
-    if (!call && ![entry[@"reportInFlight"] boolValue]) {
+    if (!call && ![entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue]) {
         // Unknown to CallKit, or a stale entry: report it as a new call
         if (entry) {
             [self rejectPendingCommandsForSessionId:sessionId];
@@ -467,7 +468,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     [entry[@"answerWaiters"] addObject:command.callbackId];
 
-    if (call) {
+    if (call || [entry[@"reportSucceeded"] boolValue]) {
         if (call.hasConnected) {
             // Already answered (e.g. in the CallKit UI): settle once its audio activation was handled
             if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
@@ -496,7 +497,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSMutableDictionary *entry = self.activeCalls[sessionId];
     entry[@"pendingAnswer"] = @NO;
     CXCall *call = [self callForSessionId:sessionId];
-    if (!call || call.hasEnded) {
+    if (!entry || call.hasEnded || (!call && ![entry[@"reportSucceeded"] boolValue])) {
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
         return;
     }
@@ -511,7 +512,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     entry[@"answerRequested"] = @YES;
 
-    CXAnswerCallAction *answerAction = [[CXAnswerCallAction alloc] initWithCallUUID:call.UUID];
+    CXAnswerCallAction *answerAction = [[CXAnswerCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
     CXTransaction *transaction = [[CXTransaction alloc] initWithAction:answerAction];
     // Mark the action as programmatic (no callbackId: answerWaiters are settled instead), so its deferred answer
     // is not emitted as a CallKit UI answer event. Pre-populated as performAnswerCallAction can fire first.
@@ -1578,8 +1579,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self logMessage:@"_dismissRingingCall"];
 
     CXCall *call = [self callForSessionId:sessionId];
-    if (call && !call.hasConnected) {
-        [self.provider reportCallWithUUID:call.UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+    if ((call && !call.hasConnected) || (!call && [self.activeCalls[sessionId][@"reportSucceeded"] boolValue])) {
+        NSUUID *callUUID = call.UUID ?: self.activeCalls[sessionId][@"callUUID"];
+        [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
         [self rejectPendingCommandsForSessionId:sessionId];
         [self _removeEndedCallForSessionId:sessionId];
         return YES;
@@ -1623,6 +1625,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDismiss": @NO,
         @"reportInFlight": @NO,
+        @"reportSucceeded": @NO,
         @"pendingAnswer": @NO,
         @"answerRequested": @NO,
         @"answerWaiters": [NSMutableArray array],
@@ -1951,7 +1954,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callBackUrl = [payloadObj valueForKey:@"callback_url"];
     NSString *Type = [payloadObj valueForKey:@"type"];
     NSString *callData = [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding];
-    if ([self callForSessionId:sessionId] || [self.activeCalls[sessionId][@"reportInFlight"] boolValue]) {
+    if ([self callForSessionId:sessionId] || [self.activeCalls[sessionId][@"reportInFlight"] boolValue] || [self.activeCalls[sessionId][@"reportSucceeded"] boolValue]) {
         // Already known to CallKit (e.g. answered with answerCall before this push): keep that call. PushKit still
         // requires reporting an incoming call; reporting the existing UUID fails with CallUUIDAlreadyExists.
         [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: call already reported for sessionId %@, keeping it", sessionId]];
