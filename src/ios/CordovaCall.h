@@ -33,6 +33,7 @@
 - (void)setVideo:(CDVInvokedUrlCommand*)command;
 
 - (void)receiveCall:(CDVInvokedUrlCommand*)command;
+- (void)answerCall:(CDVInvokedUrlCommand*)command;
 - (void)sendCall:(CDVInvokedUrlCommand*)command;
 - (void)connectCall:(CDVInvokedUrlCommand*)command;
 - (void)updateCallName:(CDVInvokedUrlCommand*)command;

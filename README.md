@@ -34,6 +34,15 @@ If you need more parameters, just add them into the structure to your liking. Ba
 
 You guys might be wondering, so far it is all about iOS, how about Android? As for Android, no modifications are required for the original plugin since background notifications can handle everything.
 
+# iOS: answering outside the CallKit UI
+
+When the user answers from somewhere other than the CallKit UI (e.g. an in-app button or a Live Activity), call
+`CordovaCall.answerCall(sessionId, from, id, callData, success, error)` before creating the call's media. It reports
+the call to CallKit if needed, then requests a `CXAnswerCallAction`, so CallKit activates the audio session (WebRTC
+audio stays disabled until `didActivateAudioSession`). `success` fires once the audio session is active for the
+answered call; create media then. Do not wait for WebRTC's `audioSessionDidStartPlayOrRecord`, which only fires once a
+peer connection exists. A programmatic answer does not emit the `answer` event.
+
 # Conclusion
 
 I hope that this plugin will help other people out there who is struggling to figure this portion out. Again, I wanted to thank the original creators of these plugins. Without them, I couldn't figure out on how to do all this. If there's any questions, feel free to contact me. I'll try my best to help.
