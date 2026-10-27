@@ -724,7 +724,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 // Transaction was rejected before reaching performEndCallAction — clean up.
                 if (self.activeCalls[sessionId] == entry) {
                     [entry[@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
-                    entry[@"pendingEnd"] = @NO;
+                    BOOL hasPendingEndCommand = [[[entry[@"callbackMap"] allValues] valueForKey:@"event"] containsObject:@"endCall"];
+                    BOOL hasPendingHangup = [[entry[@"pendingDeactivateAudioSessionEmits"] valueForKey:@"type"] containsObject:@"hangup"];
+                    entry[@"pendingEnd"] = @(hasPendingEndCommand || hasPendingHangup || [entry[@"pendingEndAfterReport"] boolValue]);
                 }
                 [self logMessage:[error localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": [error localizedDescription], @"sessionId": sessionId };

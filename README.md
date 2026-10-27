@@ -50,6 +50,8 @@ Ending a session before it has been reported blocks stale answers and delayed pu
 `receiveCall` or outgoing call reuses that session.
 After answer activation, ending the call follows the normal `hangup`/audio-deactivation path even if the observer
 still lacks the call or reports it as unconnected.
+If overlapping end requests occur, one rejected request does not allow answers while another end request or
+queued hangup remains pending.
 Delayed VoIP pushes for ended sessions are discarded without ringing or forwarding their stale payload to JavaScript.
 They report and immediately end a dummy call to satisfy PushKit's incoming-call reporting requirement.
 
@@ -57,6 +59,7 @@ They report and immediately end a dummy call to satisfy PushKit's incoming-call 
 
 On macOS with Xcode command-line tools, run `python3 tests/test_ios_call_lifecycle.py -v`.
 The tests compile the plugin's lifecycle methods against deterministic CallKit/PushKit doubles using Foundation.
+They invoke the answer handler with audio active and inactive, checking callback timing and programmatic-event suppression.
 They do not replace device testing of CallKit audio activation and push delivery.
 
 # Conclusion

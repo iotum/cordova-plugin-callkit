@@ -12,6 +12,7 @@ SOURCE = ROOT / "src/ios/CordovaCall.m"
 
 PREAMBLE = r"""
 #import <Foundation/Foundation.h>
+#import <dispatch/dispatch.h>
 
 enum { CDVCommandStatus_OK = 1, CDVCommandStatus_ERROR = 9 };
 enum { CXHandleTypePhoneNumber, CXCallEndedReasonRemoteEnded, CXCallEndedReasonFailed };
@@ -24,11 +25,21 @@ NSDictionary *pendingCallFromRecents;
 NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString *PENDING_RESPONSE_REJECT = @"pendingResponseReject";
 BOOL monitorAudioRouteChange, callKitAudioSessionActive;
+NSUInteger bgTask;
+
+@interface UIApplication : NSObject
++ (instancetype)sharedApplication;
+- (NSUInteger)beginBackgroundTaskWithExpirationHandler:(void (^)(void))handler;
+@end
+@implementation UIApplication
++ (instancetype)sharedApplication { return [self new]; }
+- (NSUInteger)beginBackgroundTaskWithExpirationHandler:(void (^)(void))handler { return 1; }
+@end
 
 @interface AVAudioSession : NSObject
 @property AVAudioSession *currentRoute;
 @property NSArray<AVAudioSession *> *outputs;
-@property NSString *portType;
+@property NSString *portType, *category, *mode;
 + (instancetype)sharedInstance;
 @end
 @implementation AVAudioSession
@@ -38,10 +49,12 @@ BOOL monitorAudioRouteChange, callKitAudioSessionActive;
 @interface RTCAudioSession : NSObject
 @property BOOL isAudioEnabled;
 + (instancetype)sharedInstance;
+- (void)audioSessionDidActivate:(AVAudioSession *)session;
 - (void)audioSessionDidDeactivate:(AVAudioSession *)session;
 @end
 @implementation RTCAudioSession
 + (instancetype)sharedInstance { return [self new]; }
+- (void)audioSessionDidActivate:(AVAudioSession *)session {}
 - (void)audioSessionDidDeactivate:(AVAudioSession *)session {}
 @end
 
@@ -103,11 +116,12 @@ BOOL monitorAudioRouteChange, callKitAudioSessionActive;
 
 @interface CXAnswerCallAction : NSObject
 @property NSUUID *UUID, *callUUID;
+@property BOOL fulfilled;
 - (instancetype)initWithCallUUID:(NSUUID *)uuid;
 - (void)fulfill;
 @end
 @implementation CXAnswerCallAction
-- (void)fulfill {}
+- (void)fulfill { self.fulfilled = YES; }
 - (instancetype)initWithCallUUID:(NSUUID *)uuid {
     self = [super init]; self.UUID = [NSUUID UUID]; self.callUUID = uuid; return self;
 }
@@ -205,6 +219,8 @@ typedef NSString *PKPushType;
 @property CXCall *observedCall;
 - (void)logMessage:(NSString *)message;
 - (void)stopKeepAlive:(CDVInvokedUrlCommand *)command;
+- (void)setupAudioSession;
+- (void)_endBackgroundTask;
 - (void)teardownAudioSession;
 - (NSString *)sessionIdForUUID:(NSUUID *)uuid;
 - (CXCall *)callForSessionId:(NSString *)sessionId;
@@ -220,6 +236,8 @@ typedef NSString *PKPushType;
 }
 - (void)logMessage:(NSString *)message {}
 - (void)stopKeepAlive:(CDVInvokedUrlCommand *)command {}
+- (void)setupAudioSession {}
+- (void)_endBackgroundTask {}
 - (void)teardownAudioSession {}
 - (NSString *)sessionIdForUUID:(NSUUID *)uuid {
     for (NSString *sessionId in self.activeCalls) {
@@ -227,7 +245,6 @@ typedef NSString *PKPushType;
     }
     return nil;
 }
-- (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId {}
 - (CXCall *)callForSessionId:(NSString *)sessionId { return self.observedCall; }
 """
 
@@ -503,6 +520,119 @@ int main(int argc, const char *argv[]) {
                 check(p.commandDelegate.results[@"after-activation"].status == CDVCommandStatus_OK,
                     @"retry after activation resolves");
                 check(p.provider.transactions.count == 0, @"no extra transactions after activation");
+            }
+        } else if ([scenario isEqual:@"answer-handler-active-audio"] ||
+                   [scenario isEqual:@"answer-handler-inactive-audio"]) {
+            BOOL audioActive = [scenario isEqual:@"answer-handler-active-audio"];
+            for (NSNumber *programmatic in @[@YES, @NO]) {
+                p = [CordovaCall new];
+                callKitAudioSessionActive = audioActive;
+                [pendingCallResponses removeAllObjects];
+                callbackIds[@"answer"] = [NSMutableArray arrayWithObject:@"answer-listener"];
+                receive(p, @"receive"); p.provider.reportCompletion(nil);
+                NSMutableDictionary *entry = p.activeCalls[@"session"];
+                entry[@"callData"] = @"payload";
+                CXAnswerCallAction *action;
+                if (programmatic.boolValue) {
+                    answer(p, @"first"); answer(p, @"retry");
+                    action = [p.provider.transactions[0] action];
+                } else {
+                    action = [[CXAnswerCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
+                }
+                [p provider:p.provider performAnswerCallAction:action];
+                check(action.fulfilled, @"answer action fulfilled");
+                if (!programmatic.boolValue) {
+                    answer(p, @"first"); answer(p, @"retry");
+                    check(p.provider.transactions.count == 0, @"API waiters reuse UI answer");
+                }
+                if (!audioActive) {
+                    check(!p.commandDelegate.results[@"first"] && !p.commandDelegate.results[@"retry"],
+                        @"inactive audio defers API settlement");
+                    check(!p.commandDelegate.results[@"answer-listener"], @"inactive audio defers UI event");
+                    check([entry[@"pendingActivateAudioSessionEmits"] count] == 1, @"answer queued for activation");
+                    check(![entry[@"answerActivationCompleted"] boolValue], @"activation not completed early");
+                    [p provider:p.provider didActivateAudioSession:[AVAudioSession sharedInstance]];
+                }
+                for (NSString *callbackId in @[@"first", @"retry"]) {
+                    check(p.commandDelegate.results[callbackId].status == CDVCommandStatus_OK,
+                        @"active audio settles API waiters");
+                }
+                check([entry[@"answerActivationCompleted"] boolValue], @"answer activation recorded");
+                check([entry[@"pendingActivateAudioSessionEmits"] count] == 0, @"answer queue drained");
+                check([entry[@"callbackMap"] count] == 0, @"programmatic marker consumed");
+                check(pendingCallResponses.count == 0, @"no extra queued UI answer");
+                if (programmatic.boolValue) {
+                    check(!p.commandDelegate.results[@"answer-listener"], @"programmatic answer suppresses UI event");
+                    check(p.provider.transactions.count == 1, @"one programmatic answer transaction");
+                } else {
+                    check([p.commandDelegate.results[@"answer-listener"].value isEqual:@"payload"],
+                        @"UI answer still emits its payload");
+                }
+            }
+        } else if ([scenario isEqual:@"overlapping-end-rejection"] ||
+                   [scenario isEqual:@"end-rejection-after-hangup"] ||
+                   [scenario isEqual:@"end-rejection-after-ui-hangup"]) {
+            BOOL queuedHangup = ![scenario isEqual:@"overlapping-end-rejection"];
+            BOOL uiHangup = [scenario isEqual:@"end-rejection-after-ui-hangup"];
+            for (NSNumber *rejectFirst in (queuedHangup ? @[@NO] : @[@YES, @NO])) {
+                p = [CordovaCall new];
+                receive(p, @"receive"); p.provider.reportCompletion(nil);
+                NSMutableDictionary *entry = p.activeCalls[@"session"];
+                if (queuedHangup) {
+                    p.observedCall = [CXCall new];
+                    p.observedCall.UUID = entry[@"callUUID"];
+                    p.observedCall.hasConnected = YES;
+                }
+                p.provider.deferTransactionCompletion = YES;
+                CXEndCallAction *firstAction;
+                void (^firstCompletion)(NSError *) = nil;
+                if (uiHangup) {
+                    firstAction = [[CXEndCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
+                } else {
+                    [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                        callbackId:@"first-end" className:@"" methodName:@""]];
+                    firstAction = (CXEndCallAction *)[p.provider.transactions[0] action];
+                    firstCompletion = p.provider.transactionCompletion;
+                }
+                if (queuedHangup) {
+                    [p provider:p.provider performEndCallAction:firstAction];
+                    check([entry[@"pendingDeactivateAudioSessionEmits"] count] == 1,
+                        @"hangup waits for audio deactivation");
+                }
+                [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                    callbackId:@"second-end" className:@"" methodName:@""]];
+                BOOL rejectFirstCommand = rejectFirst.boolValue && !queuedHangup;
+                void (^rejectedCompletion)(NSError *) = rejectFirstCommand
+                    ? firstCompletion : p.provider.transactionCompletion;
+                rejectedCompletion([NSError errorWithDomain:@"rejected-end" code:1 userInfo:nil]);
+                NSString *rejectedId = rejectFirstCommand ? @"first-end" : @"second-end";
+                check(p.commandDelegate.results[rejectedId].status == CDVCommandStatus_ERROR,
+                    @"rejected end reports its error");
+                check([entry[@"pendingEnd"] boolValue], @"remaining end or hangup preserves cancellation");
+                NSUInteger transactionCount = p.provider.transactions.count;
+                answer(p, @"late-answer");
+                check(p.commandDelegate.results[@"late-answer"].status == CDVCommandStatus_ERROR,
+                    @"late answer rejected during teardown");
+                check([p.commandDelegate.results[@"late-answer"].value[@"callEnded"] boolValue],
+                    @"late answer reports callEnded");
+                check(p.provider.transactions.count == transactionCount, @"no answer transaction during teardown");
+                if (queuedHangup) {
+                    [p provider:p.provider didDeactivateAudioSession:[AVAudioSession sharedInstance]];
+                    check(!p.activeCalls[@"session"], @"deactivation removes ended entry");
+                    if (!uiHangup) {
+                        check(p.commandDelegate.results[@"first-end"].status == CDVCommandStatus_OK,
+                            @"accepted end resolves on deactivation");
+                    }
+                } else {
+                    void (^remainingCompletion)(NSError *) = rejectFirstCommand
+                        ? p.provider.transactionCompletion : firstCompletion;
+                    remainingCompletion([NSError errorWithDomain:@"remaining-end" code:2 userInfo:nil]);
+                    check(![entry[@"pendingEnd"] boolValue], @"all end rejections release cancellation");
+                    check([entry[@"callbackMap"] count] == 0, @"all rejected end callbacks removed");
+                    answer(p, @"retry-answer");
+                    check(p.provider.transactions.count == transactionCount + 1,
+                        @"answer can retry after all end requests fail");
+                }
             }
         } else if ([scenario isEqual:@"replacement-answer-completion"]) {
             p.provider.deferTransactionCompletion = YES;
@@ -898,8 +1028,11 @@ METHODS = [
     "endCall:",
     "rejectPendingCommandsForSessionId:",
     "processPendingActivateEmitsSkippingTypes:",
+    "performAnswerCallAction:",
     "performEndCallAction:",
+    "didActivateAudioSession:",
     "didDeactivateAudioSession:",
+    "triggerCordovaEventForCallResponse:",
     "resolveCommandForSessionId:",
     "_removeEndedCallForSessionId:",
     "_dismissRingingCall:",
@@ -969,6 +1102,21 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_replacement_end_completion(self):
         self.run_scenario("replacement-end-completion")
+
+    def test_overlapping_end_rejection(self):
+        self.run_scenario("overlapping-end-rejection")
+
+    def test_end_rejection_after_hangup(self):
+        self.run_scenario("end-rejection-after-hangup")
+
+    def test_end_rejection_after_ui_hangup(self):
+        self.run_scenario("end-rejection-after-ui-hangup")
+
+    def test_answer_handler_active_audio(self):
+        self.run_scenario("answer-handler-active-audio")
+
+    def test_answer_handler_inactive_audio(self):
+        self.run_scenario("answer-handler-inactive-audio")
 
     def test_ui_answer_during_transaction(self):
         self.run_scenario("ui-answer-during-transaction")
