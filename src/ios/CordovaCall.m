@@ -18,6 +18,8 @@ BOOL includeInRecents = NO;
 NSMutableDictionary<NSString*, NSMutableArray*> *callbackIds;
 NSDictionary* pendingCallFromRecents;
 BOOL monitorAudioRouteChange = NO;
+// YES between CallKit's didActivateAudioSession and didDeactivateAudioSession
+BOOL callKitAudioSessionActive = NO;
 BOOL enableDTMF = YES;
 PKPushRegistry *_voipRegistry;
 
@@ -31,6 +33,8 @@ UIBackgroundTaskIdentifier bgTask;
 NSMutableArray* pendingCallResponses;
 NSString* const PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 NSString* const PENDING_RESPONSE_REJECT = @"pendingResponseReject";
+// answerCall rejection message when the call ended (callEnded: true in the result)
+NSString* const ANSWER_ERROR_CALL_ENDED = @"call ended";
 
 // Saved audio session state captured before setupAudioSession; restored in teardownAudioSession.
 AVAudioSessionCategory _savedAudioCategory;
@@ -58,6 +62,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self.provider setDelegate:self queue:nil];
     self.callController = [[CXCallController alloc] init];
     self.activeCalls = [[NSMutableDictionary alloc] init];
+    self.endedSessionIds = [[NSMutableSet alloc] init];
     [[RTCAudioSession sharedInstance] addDelegate:self];
     //initialize callback dictionary
     callbackIds = [[NSMutableDictionary alloc]initWithCapacity:5];
@@ -343,10 +348,45 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
     // If this was called from JS, we'll need to create a new activeCall entry
     NSMutableDictionary *call = self.activeCalls[sessionId];
+    [self.endedSessionIds removeObject:sessionId]; // an explicit new report supersedes an earlier ended call
     if (!call) {
         self.activeCalls[sessionId] = [self newActiveCallEntryWithUUID:[[NSUUID alloc] init]];
     }
-    NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
+
+    [self _reportIncomingCallForSessionId:sessionId callName:callName callId:callId completion:^(NSError * _Nullable error, BOOL dismissed) {
+        if (error != nil) {
+            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
+        } else if (dismissed) {
+            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
+        } else {
+            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
+        }
+    }];
+}
+
+// Reports the activeCalls entry for sessionId to CallKit as a new incoming call. Once registered, a dismiss or an
+// answer requested while the report was in flight is applied. Emits the receiveCall event.
+- (void)_reportIncomingCallForSessionId:(NSString *)sessionId
+                               callName:(NSString *)callName
+                                 callId:(NSString *)callId
+                             completion:(void (^)(NSError * _Nullable error, BOOL dismissed))completion
+{
+    NSMutableDictionary *entry = self.activeCalls[sessionId];
+    if ([entry[@"reportInFlight"] boolValue]) {
+        [entry[@"reportCompletions"] addObject:[completion copy]];
+        return;
+    }
+    NSMutableArray *reportCompletions = [NSMutableArray arrayWithObject:[completion copy]];
+    entry[@"reportCompletions"] = reportCompletions;
+    void (^completeReport)(NSError *, BOOL) = ^(NSError *error, BOOL dismissed) {
+        NSArray *completions = [reportCompletions copy];
+        [reportCompletions removeAllObjects];
+        for (void (^reportCompletion)(NSError *, BOOL) in completions) {
+            reportCompletion(error, dismissed);
+        }
+    };
+    NSUUID *callUUID = entry[@"callUUID"];
+    entry[@"reportInFlight"] = @YES;
 
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
@@ -358,26 +398,204 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
     [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
-        if(error == nil) {
-            // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
-            // end the call immediately now that CallKit has registered it.
-            // This prevents the dismiss being silently dropped during cold launch.
-            if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
-                [self logMessage:[NSString stringWithFormat:@"receiveCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call dismissed before answer"] callbackId:command.callbackId];
-                [self _dismissRingingCall:sessionId];
-            } else {
-                [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Incoming call successful"] callbackId:command.callbackId];
-            }
-        } else {
-            [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]] callbackId:command.callbackId];
+        if (self.activeCalls[sessionId] != entry) {
+            completeReport(error, NO);
             return;
+        }
+        entry[@"reportInFlight"] = @NO;
+        if (error != nil) {
+            if (![entry[@"reportSucceeded"] boolValue]) {
+                entry[@"pendingAnswer"] = @NO;
+                [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
+                [self.activeCalls removeObjectForKey:sessionId];
+            }
+            completeReport(error, NO);
+            return;
+        }
+        self.activeCalls[sessionId][@"reportSucceeded"] = @YES;
+        if ([entry[@"pendingEndAfterReport"] boolValue]) {
+            [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+            [self rejectPendingCommandsForSessionId:sessionId];
+            [self _removeEndedCallForSessionId:sessionId];
+            completeReport(nil, YES);
+            return;
+        }
+        // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
+        // end the call immediately now that CallKit has registered it.
+        // This prevents the dismiss being silently dropped during cold launch.
+        if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
+            [self logMessage:[NSString stringWithFormat:@"reportIncomingCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
+            completeReport(nil, YES);
+            [self _dismissRingingCall:sessionId];
+            return;
+        }
+        completeReport(nil, NO);
+        if (self.activeCalls[sessionId] == entry && [entry[@"pendingAnswer"] boolValue]) {
+            [self logMessage:[NSString stringWithFormat:@"reportIncomingCall completion: pendingAnswer set, answering call for sessionId: %@", sessionId]];
+            [self _requestAnswerCallActionForSessionId:sessionId];
         }
     }];
     for (id callbackId in callbackIds[@"receiveCall"]) {
         CDVPluginResult* pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"receiveCall event called successfully"];
         [pluginResult setKeepCallbackAsBool:YES];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+    }
+}
+
+// Answers an incoming call through CallKit, as if the user answered it in the CallKit UI, so CallKit activates the
+// audio session. Reports the call to CallKit first if it does not know it (e.g. its ringing push was not sent).
+// Resolves once didActivateAudioSession has handled the answer: create the call's media only after that.
+// It must not wait for WebRTC's audioSessionDidStartPlayOrRecord, which needs a peer connection to exist.
+// Arguments: sessionId, callName, callId (handle), callData (payload of the answer/reject events).
+- (void)answerCall:(CDVInvokedUrlCommand*)command
+{
+    [self logMessage:@"answerCall"];
+    id sessionIdArg = [command argumentAtIndex:0];
+    if (![sessionIdArg isKindOfClass:[NSString class]] || [sessionIdArg length] == 0) {
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"sessionId cannot be empty"] callbackId:command.callbackId];
+        return;
+    }
+    NSString *sessionId = sessionIdArg;
+    id callNameArg = [command argumentAtIndex:1];
+    NSString *callName = ([callNameArg isKindOfClass:[NSString class]] && [callNameArg length] > 0) ? callNameArg : nil;
+    id callIdArg = [command argumentAtIndex:2];
+    NSString *callId = ([callIdArg isKindOfClass:[NSString class]] && [callIdArg length] > 0) ? callIdArg : (callName ?: @"Unknown");
+    id callDataArg = [command argumentAtIndex:3];
+    NSString *callData = ([callDataArg isKindOfClass:[NSString class]] && [callDataArg length] > 0) ? callDataArg : nil;
+
+    NSMutableDictionary *entry = self.activeCalls[sessionId];
+    CXCall *call = [self callForSessionId:sessionId];
+    if (call.hasEnded || [entry[@"pendingDismiss"] boolValue] || [entry[@"pendingEnd"] boolValue] ||
+        (!entry && !call && [self.endedSessionIds containsObject:sessionId])) {
+        NSDictionary *resultDict = @{ @"message": ANSWER_ERROR_CALL_ENDED, @"sessionId": sessionId, @"callEnded": @YES };
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict] callbackId:command.callbackId];
+        return;
+    }
+    if (call.isOutgoing || [entry[@"isOutgoing"] boolValue]) {
+        NSDictionary *resultDict = @{ @"message": @"Not an incoming call", @"sessionId": sessionId };
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict] callbackId:command.callbackId];
+        return;
+    }
+
+    BOOL needsReport = NO;
+    if (!call && ![entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue]) {
+        // Unknown to CallKit, or a stale entry: report it as a new call
+        if (entry) {
+            [self rejectPendingCommandsForSessionId:sessionId];
+        }
+        NSString *previousCallData = entry[@"callData"];
+        entry = [self newActiveCallEntryWithUUID:[[NSUUID alloc] init]];
+        if (previousCallData) {
+            entry[@"callData"] = previousCallData;
+        }
+        self.activeCalls[sessionId] = entry;
+        needsReport = YES;
+    }
+    if (callData && !entry[@"callData"]) {
+        entry[@"callData"] = callData;
+    }
+    [entry[@"answerWaiters"] addObject:command.callbackId];
+
+    if (call || [entry[@"reportSucceeded"] boolValue]) {
+        if (call.hasConnected) {
+            // Already answered (e.g. in the CallKit UI): settle once its audio activation was handled
+            if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
+                [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
+            }
+        } else {
+            [self _requestAnswerCallActionForSessionId:sessionId];
+        }
+        return;
+    }
+
+    // Answer once the in-flight (or the following) report has registered the call with CallKit
+    entry[@"pendingAnswer"] = @YES;
+    if (needsReport) {
+        [self _reportIncomingCallForSessionId:sessionId callName:callName callId:callId completion:^(NSError * _Nullable error, BOOL dismissed) {
+            if (error != nil) {
+                [self logMessage:[NSString stringWithFormat:@"answerCall: failed to report incoming call for sessionId %@: %@", sessionId, error.localizedDescription]];
+            }
+        }];
+    }
+}
+
+- (void)_requestAnswerCallActionForSessionId:(NSString *)sessionId
+{
+    NSMutableDictionary *entry = self.activeCalls[sessionId];
+    entry[@"pendingAnswer"] = @NO;
+    CXCall *call = [self callForSessionId:sessionId];
+    if (!entry || call.hasEnded || [entry[@"pendingDismiss"] boolValue] || [entry[@"pendingEnd"] boolValue] ||
+        (!call && ![entry[@"reportSucceeded"] boolValue])) {
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+        return;
+    }
+    if ([entry[@"answerActivationCompleted"] boolValue] || call.hasConnected) {
+        if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
+            [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
+        }
+        return;
+    }
+    if ([entry[@"answerRequested"] boolValue] || [self _hasPendingAnswerEmitForSessionId:sessionId]) {
+        return;
+    }
+    entry[@"answerRequested"] = @YES;
+
+    CXAnswerCallAction *answerAction = [[CXAnswerCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
+    CXTransaction *transaction = [[CXTransaction alloc] initWithAction:answerAction];
+    // Mark the action as programmatic (no callbackId: answerWaiters are settled instead), so its deferred answer
+    // is not emitted as a CallKit UI answer event. Pre-populated as performAnswerCallAction can fire first.
+    entry[@"callbackMap"][answerAction.UUID.UUIDString] = [@{ @"event": @"answerCall" } mutableCopy];
+    [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
+        if (error == nil) {
+            return;
+        }
+        [self logMessage:[NSString stringWithFormat:@"answerCall: CXAnswerCallAction failed for sessionId %@: %@", sessionId, error.localizedDescription]];
+        if (self.activeCalls[sessionId] != entry) {
+            return;
+        }
+        [entry[@"callbackMap"] removeObjectForKey:answerAction.UUID.UUIDString];
+        entry[@"answerRequested"] = @NO;
+        CXCall *currentCall = [self callForSessionId:sessionId];
+        if (currentCall.hasEnded || [entry[@"pendingDismiss"] boolValue] || [entry[@"pendingEnd"] boolValue]) {
+            [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+            return;
+        }
+        if (currentCall.hasConnected || [entry[@"answerActivationCompleted"] boolValue] ||
+            [self _hasPendingAnswerEmitForSessionId:sessionId]) {
+            // Answered meanwhile (e.g. in the CallKit UI): settle once its audio activation was handled
+            if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
+                [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
+            }
+            return;
+        }
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
+    }];
+}
+
+- (BOOL)_hasPendingAnswerEmitForSessionId:(NSString *)sessionId
+{
+    NSArray *pendingEmits = self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"];
+    return [[pendingEmits valueForKey:@"type"] containsObject:@"answer"];
+}
+
+// Settles the answerCall promises of a session: resolved without errorMessage, rejected with it.
+- (void)_settleAnswerWaitersForSessionId:(NSString *)sessionId errorMessage:(nullable NSString *)errorMessage
+{
+    NSMutableArray *waiters = self.activeCalls[sessionId][@"answerWaiters"];
+    if (waiters.count == 0) {
+        return;
+    }
+    NSArray *callbackIdsToSettle = [waiters copy];
+    [waiters removeAllObjects];
+    [self logMessage:[NSString stringWithFormat:@"%@ answerCall promise(s) for sessionId: %@%@", errorMessage ? @"rejected" : @"resolved", sessionId, errorMessage ? [NSString stringWithFormat:@" (%@)", errorMessage] : @""]];
+    NSDictionary *resultDict = @{
+        @"message": errorMessage ?: @"answerCall event called successfully",
+        @"sessionId": sessionId,
+        @"callEnded": @([errorMessage isEqualToString:ANSWER_ERROR_CALL_ENDED])
+    };
+    for (NSString *callbackId in callbackIdsToSettle) {
+        CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:(errorMessage ? CDVCommandStatus_ERROR : CDVCommandStatus_OK) messageAsDictionary:resultDict];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
     }
 }
@@ -396,7 +614,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     }
     NSString* sessionId = [command.arguments objectAtIndex:2];
     NSUUID *callUUID = [[NSUUID alloc] init];
+    [self.endedSessionIds removeObject:sessionId];
     self.activeCalls[sessionId] = [self newActiveCallEntryWithUUID:callUUID];
+    self.activeCalls[sessionId][@"isOutgoing"] = @YES;
 
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
     CXStartCallAction *startCallAction = [[CXStartCallAction alloc] initWithCallUUID:callUUID handle:handle];
@@ -474,9 +694,27 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [self stopKeepAlive:nil];
     NSString* sessionId = [command.arguments objectAtIndex:0];
     CXCall *call = [self callForSessionId:sessionId];
+    NSMutableDictionary *entry = self.activeCalls[sessionId];
+    if (entry) {
+        entry[@"pendingEnd"] = @YES;
+        entry[@"pendingAnswer"] = @NO;
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+    } else if (!call && [sessionId isKindOfClass:[NSString class]] && sessionId.length > 0) {
+        [self.endedSessionIds addObject:sessionId];
+    }
+    BOOL answerActivated = [entry[@"answerActivationCompleted"] boolValue];
+    if ([entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue] &&
+        !call.hasConnected && !answerActivated) {
+        entry[@"pendingEndAfterReport"] = @YES;
+        [self.endedSessionIds addObject:sessionId];
+        NSDictionary *resultDict = @{ @"message": @"Call end deferred until registration", @"sessionId": sessionId };
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict] callbackId:command.callbackId];
+        return;
+    }
+    NSUUID *callUUID = call.UUID ?: (([entry[@"reportSucceeded"] boolValue] || answerActivated) ? entry[@"callUUID"] : nil);
 
-    if(call) {
-        CXEndCallAction *endCallAction = [[CXEndCallAction alloc] initWithCallUUID:call.UUID];
+    if(callUUID) {
+        CXEndCallAction *endCallAction = [[CXEndCallAction alloc] initWithCallUUID:callUUID];
         CXTransaction *transaction = [[CXTransaction alloc] initWithAction:endCallAction];
         // Pre-populate callbackMap before requestTransaction: performEndCallAction can fire
         // before the requestTransaction completion block.
@@ -484,7 +722,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error != nil) {
                 // Transaction was rejected before reaching performEndCallAction — clean up.
-                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
+                if (self.activeCalls[sessionId] == entry) {
+                    [entry[@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
+                    BOOL hasPendingEndCommand = [[[entry[@"callbackMap"] allValues] valueForKey:@"event"] containsObject:@"endCall"];
+                    BOOL hasPendingHangup = [[entry[@"pendingDeactivateAudioSessionEmits"] valueForKey:@"type"] containsObject:@"hangup"];
+                    entry[@"pendingEnd"] = @(hasPendingEndCommand || hasPendingHangup || [entry[@"pendingEndAfterReport"] boolValue]);
+                }
                 [self logMessage:[error localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": [error localizedDescription], @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
@@ -606,8 +849,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 
 // Rejects any pending programmatic-command promises for a session with a "call ended" error.
 // Called when a session is torn down so outstanding JS promises always settle.
+// Removes the call entry and remembers the session as ended so late answerCall retries are rejected
+- (void)_removeEndedCallForSessionId:(NSString *)sessionId
+{
+    [self.activeCalls removeObjectForKey:sessionId];
+    [self.endedSessionIds addObject:sessionId];
+}
+
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId
 {
+    [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
     NSMutableDictionary *callbackMap = self.activeCalls[sessionId][@"callbackMap"];
     for (NSString *uuidStr in [callbackMap allKeys]) {
         NSMutableDictionary *entry = callbackMap[uuidStr];
@@ -977,6 +1228,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 continue;
             }
 
+            if ([eventType isEqualToString:@"answer"]) {
+                // Answered and CallKit activated the audio session: the call's media can be created now
+                self.activeCalls[sessionId][@"answerActivationCompleted"] = @YES;
+                [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
+            }
+
             if (self.activeCalls[sessionId][@"callbackMap"][uuidStr]) {
                 // Programmatic action: resolve the JS promise only.
                 [self resolveCommandForSessionId:sessionId actionUUIDString:uuidStr];
@@ -1032,6 +1289,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [[RTCAudioSession sharedInstance] audioSessionDidActivate:audioSession];
     [RTCAudioSession sharedInstance].isAudioEnabled = YES;
     monitorAudioRouteChange = YES;
+    callKitAudioSessionActive = YES;
 
     // Stage 1: handle answer/unhold immediately after CallKit activates the audio session.
     // sendCall stays queued and is handled after WebRTC audio starts.
@@ -1062,6 +1320,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     [RTCAudioSession sharedInstance].isAudioEnabled = NO;
     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:audioSession];
     monitorAudioRouteChange = NO;
+    callKitAudioSessionActive = NO;
 
     // Process deferred callbacks for didDeactivateAudioSession (hold, hangup/endCall).
 
@@ -1131,7 +1390,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
         }
         [self rejectPendingCommandsForSessionId:sessionId];
-        [self.activeCalls removeObjectForKey:sessionId];
+        [self _removeEndedCallForSessionId:sessionId];
     }
 
     // Once all calls have ended, reset the audio session to a mixing-friendly state
@@ -1151,6 +1410,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Defer the answer callback until didActivateAudioSession so that JsSIP's gUM
     // runs only after the audio session is fully active and owned by CallKit.
     [self.activeCalls[sessionId][@"pendingActivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
+    if (callKitAudioSessionActive) {
+        // e.g. answering while another call is active: CallKit keeps the audio session active and
+        // didActivateAudioSession will not fire for this call, so handle the answer now.
+        [self processPendingActivateEmitsSkippingTypes:[NSSet setWithObjects:@"sendCall", nil] source:@"performAnswerCallAction"];
+    }
 
     UIApplication *app = [UIApplication sharedApplication];
     bgTask = [app beginBackgroundTaskWithExpirationHandler:^{
@@ -1175,8 +1439,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     CXCall *call = [self callForSessionId:sessionId];
-    if(call) {
-        if(call.hasConnected) {
+    self.activeCalls[sessionId][@"pendingEnd"] = @YES;
+    self.activeCalls[sessionId][@"pendingAnswer"] = @NO;
+    [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+    BOOL answerActivated = [self.activeCalls[sessionId][@"answerActivationCompleted"] boolValue];
+    if(call || answerActivated) {
+        if(call.hasConnected || answerActivated) {
             // Defer the hangup event and endCall promise resolution to didDeactivateAudioSession
             // so that audio is fully torn down before JS is notified.
             [self.activeCalls[sessionId][@"pendingDeactivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"hangup"}];
@@ -1209,7 +1477,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 }
 
                 [self rejectPendingCommandsForSessionId:sessionId];
-                [self.activeCalls removeObjectForKey:sessionId];
+                [self _removeEndedCallForSessionId:sessionId];
             }
         } else {
             if ([callbackIds[@"reject"] count] == 0) {
@@ -1228,7 +1496,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 [self resolveCommandForSessionId:sessionId actionUUIDString:action.UUID.UUIDString];
             }
             [self rejectPendingCommandsForSessionId:sessionId];
-            [self.activeCalls removeObjectForKey:sessionId]; // clear out the call once it's ended
+            [self _removeEndedCallForSessionId:sessionId]; // clear out the call once it's ended
         }
     } else {
         // Race: CallKit can invoke performEndCallAction after the call has already disappeared
@@ -1239,7 +1507,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
         // Also tear down the session so no stale state / pending promises remain.
         [self rejectPendingCommandsForSessionId:sessionId];
-        [self.activeCalls removeObjectForKey:sessionId];
+        [self _removeEndedCallForSessionId:sessionId];
     }
     monitorAudioRouteChange = NO;
     [action fulfill];
@@ -1376,11 +1644,18 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 - (BOOL)_dismissRingingCall:(NSString *)sessionId {
     [self logMessage:@"_dismissRingingCall"];
 
+    if (![sessionId isKindOfClass:[NSString class]] || sessionId.length == 0) {
+        return NO;
+    }
     CXCall *call = [self callForSessionId:sessionId];
-    if (call && !call.hasConnected) {
-        [self.provider reportCallWithUUID:call.UUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
+    if ([self.activeCalls[sessionId][@"answerActivationCompleted"] boolValue]) {
+        return NO;
+    }
+    if ((call && !call.hasConnected) || (!call && [self.activeCalls[sessionId][@"reportSucceeded"] boolValue])) {
+        NSUUID *callUUID = call.UUID ?: self.activeCalls[sessionId][@"callUUID"];
+        [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
         [self rejectPendingCommandsForSessionId:sessionId];
-        [self.activeCalls removeObjectForKey:sessionId];
+        [self _removeEndedCallForSessionId:sessionId];
         return YES;
     } else if (self.activeCalls[sessionId] && !call) {
         // The activeCalls entry exists but CallKit hasn't registered it yet
@@ -1388,16 +1663,23 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Flag it so the completion block ends the call immediately once registered.
         [self logMessage:[NSString stringWithFormat:@"_dismissRingingCall: call not yet registered with CallKit, setting pendingDismiss for sessionId: %@", sessionId]];
         self.activeCalls[sessionId][@"pendingDismiss"] = @YES;
+        self.activeCalls[sessionId][@"pendingAnswer"] = @NO;
+        [self.endedSessionIds addObject:sessionId];
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+        return YES;
+    }
+    if (!self.activeCalls[sessionId] && !call) {
+        [self.endedSessionIds addObject:sessionId];
         return YES;
     }
     return NO;
 }
 
 // Reports a dummy incoming call with a random UUID and immediately ends it.
-// Must be called when a VoIP push is received but the payload is malformed,
+// Must be called when a VoIP push is received but the payload is malformed or stale,
 // because iOS 13+ will terminate the app if no call is reported.
 - (void)_reportAndEndDummyCall {
-    [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for malformed VoIP push"];
+    [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for discarded VoIP push"];
     NSUUID *dummyUUID = [[NSUUID alloc] init];
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"Unknown"];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
@@ -1421,6 +1703,15 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"pendingActivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDismiss": @NO,
+        @"pendingEnd": @NO,
+        @"pendingEndAfterReport": @NO,
+        @"isOutgoing": @NO,
+        @"reportInFlight": @NO,
+        @"reportSucceeded": @NO,
+        @"pendingAnswer": @NO,
+        @"answerRequested": @NO,
+        @"answerActivationCompleted": @NO,
+        @"answerWaiters": [NSMutableArray array],
         @"allowUnmute": @YES
     } mutableCopy];
 }
@@ -1731,6 +2022,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         completion();
         return;
     }
+    if ([self.endedSessionIds containsObject:sessionId]) {
+        [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: sessionId %@ already ended, discarding as dummy call", sessionId]];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
     id fromValue = [payloadObj valueForKey:@"from"];
     NSString *from = [fromValue isKindOfClass:[NSString class]] && [fromValue length] > 0 ? fromValue : nil;
     id cidValue = [payloadObj valueForKey:@"cid"];
@@ -1745,11 +2042,29 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     // Store URL and Call Id so they can be used for call Answer/Reject
     callBackUrl = [payloadObj valueForKey:@"callback_url"];
     NSString *Type = [payloadObj valueForKey:@"type"];
-    hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
-    self.activeCalls[sessionId] = [self newActiveCallEntryWithUUID:[[NSUUID alloc] init]];
-    self.activeCalls[sessionId][@"callData"] = [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding];
+    NSString *callData = [[NSString alloc] initWithData:payloadJsonData encoding:NSUTF8StringEncoding];
+    if ([self callForSessionId:sessionId] || [self.activeCalls[sessionId][@"reportInFlight"] boolValue] || [self.activeCalls[sessionId][@"reportSucceeded"] boolValue]) {
+        // Already known to CallKit (e.g. answered with answerCall before this push): keep that call. PushKit still
+        // requires reporting an incoming call; reporting the existing UUID fails with CallUUIDAlreadyExists.
+        [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: call already reported for sessionId %@, keeping it", sessionId]];
+        if (!self.activeCalls[sessionId][@"callData"]) {
+            self.activeCalls[sessionId][@"callData"] = callData;
+        }
+        CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
+        callUpdate.remoteHandle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId ?: from ?: @"Unknown"];
+        callUpdate.localizedCallerName = from;
+        [self.provider reportNewIncomingCallWithUUID:self.activeCalls[sessionId][@"callUUID"] update:callUpdate completion:^(NSError * _Nullable error) {
+            if (error != nil) {
+                [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: re-report for sessionId %@: %@", sessionId, error.localizedDescription]];
+            }
+        }];
+    } else {
+        hasVideo = ![Type isEqualToString:@"incoming_phone_call"];
+        self.activeCalls[sessionId] = [self newActiveCallEntryWithUUID:[[NSUUID alloc] init]];
+        self.activeCalls[sessionId][@"callData"] = callData;
 
-    [self receiveCall:newCommand];
+        [self receiveCall:newCommand];
+    }
 
     @try {
         NSError * err;

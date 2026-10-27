@@ -18,6 +18,7 @@
 @property (nonatomic, strong) CXProvider *provider;
 @property (nonatomic, strong) CXCallController *callController;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *activeCalls; // Stores each active call, mapped by call ID
+@property (nonatomic, strong) NSMutableSet<NSString *> *endedSessionIds; // Sessions whose call was torn down
 
 - (void)updateProviderConfig;
 - (void)setupAudioSession;
@@ -33,6 +34,7 @@
 - (void)setVideo:(CDVInvokedUrlCommand*)command;
 
 - (void)receiveCall:(CDVInvokedUrlCommand*)command;
+- (void)answerCall:(CDVInvokedUrlCommand*)command;
 - (void)sendCall:(CDVInvokedUrlCommand*)command;
 - (void)connectCall:(CDVInvokedUrlCommand*)command;
 - (void)updateCallName:(CDVInvokedUrlCommand*)command;
