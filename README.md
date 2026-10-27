@@ -43,6 +43,8 @@ audio stays disabled until `didActivateAudioSession`). `success` fires once the 
 answered call; create media then. Do not wait for WebRTC's `audioSessionDidStartPlayOrRecord`, which only fires once a
 peer connection exists. A programmatic answer does not emit the `answer` event.
 Once an incoming-call report succeeds, answers reuse its UUID even if CallKit's call observer has not updated yet.
+Delayed VoIP pushes for ended sessions are discarded without ringing or forwarding their stale payload to JavaScript.
+They report and immediately end a dummy call to satisfy PushKit's incoming-call reporting requirement.
 
 # Lifecycle regression tests
 

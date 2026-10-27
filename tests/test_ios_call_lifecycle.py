@@ -233,6 +233,37 @@ int main(int argc, const char *argv[]) {
             check(p.provider.reports.lastObject == uuid, @"push re-reports existing UUID");
             check(completed == 1, @"push completes once");
             check(p.commandDelegate.results[@"push"] != nil, @"active push forwarded");
+        } else if ([scenario isEqual:@"push-after-end"]) {
+            answer(p, @"first"); p.provider.reportCompletion(nil);
+            NSUUID *uuid = p.activeCalls[@"session"][@"callUUID"];
+            [p _removeEndedCallForSessionId:@"session"];
+            callBackUrl = @"current-call-url";
+            __block int completed = 0;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                [p pushRegistry:nil didReceiveIncomingPushWithPayload:push() forType:nil
+                    withCompletionHandler:^{ completed++; }];
+                check(!p.activeCalls[@"session"], @"stale push must not recreate entry");
+                check([p.endedSessionIds containsObject:@"session"], @"retain ended marker");
+                check(!p.commandDelegate.results[@"push"], @"do not forward stale push");
+                check([callBackUrl isEqual:@"current-call-url"], @"do not overwrite callback URL");
+                check(completed == attempt + 1, @"stale push completes once");
+                check(![p.provider.reports.lastObject isEqual:uuid], @"dummy UUID");
+                NSUUID *dummy = p.provider.reports.lastObject;
+                p.provider.reportCompletion(nil);
+                check([p.provider.ended.lastObject isEqual:dummy], @"dummy ended");
+            }
+            answer(p, @"late");
+            check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"retry stays rejected");
+        } else if ([scenario isEqual:@"new-push"]) {
+            [p.endedSessionIds addObject:@"another-session"];
+            __block int completed = 0;
+            [p pushRegistry:nil didReceiveIncomingPushWithPayload:push() forType:nil
+                withCompletionHandler:^{ completed++; }];
+            check(p.activeCalls[@"session"] != nil, @"new session reported");
+            check(p.provider.reports.count == 1, @"one incoming report");
+            check(p.commandDelegate.results[@"push"] != nil, @"new push forwarded");
+            check(completed == 1, @"new push completes once");
+            check([p.endedSessionIds containsObject:@"another-session"], @"unrelated ended session preserved");
         } else if ([scenario isEqual:@"already-connected"] || [scenario isEqual:@"outgoing"]) {
             p.activeCalls[@"session"] = [p newActiveCallEntryWithUUID:[NSUUID UUID]];
             p.observedCall = [CXCall new];
@@ -315,6 +346,12 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_outgoing(self):
         self.run_scenario("outgoing")
+
+    def test_push_after_end(self):
+        self.run_scenario("push-after-end")
+
+    def test_new_push(self):
+        self.run_scenario("new-push")
 
     def run_scenario(self, name):
         subprocess.run([str(self.binary), name], check=True)

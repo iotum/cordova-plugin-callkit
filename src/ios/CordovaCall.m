@@ -1597,10 +1597,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 // Reports a dummy incoming call with a random UUID and immediately ends it.
-// Must be called when a VoIP push is received but the payload is malformed,
+// Must be called when a VoIP push is received but the payload is malformed or stale,
 // because iOS 13+ will terminate the app if no call is reported.
 - (void)_reportAndEndDummyCall {
-    [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for malformed VoIP push"];
+    [self logMessage:@"_reportAndEndDummyCall: reporting dummy call for discarded VoIP push"];
     NSUUID *dummyUUID = [[NSUUID alloc] init];
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:@"Unknown"];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
@@ -1935,6 +1935,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     NSString *sessionId = [sessionIdValue isKindOfClass:[NSString class]] ? sessionIdValue : nil;
     if (!sessionId || sessionId.length == 0) {
         [self logMessage:@"didReceiveIncomingPush: no session_id or call_uuid (deprecated) in payload, discarding as dummy call"];
+        [self _reportAndEndDummyCall];
+        completion();
+        return;
+    }
+    if ([self.endedSessionIds containsObject:sessionId]) {
+        [self logMessage:[NSString stringWithFormat:@"didReceiveIncomingPush: sessionId %@ already ended, discarding as dummy call", sessionId]];
         [self _reportAndEndDummyCall];
         completion();
         return;
