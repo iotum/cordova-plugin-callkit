@@ -316,6 +316,56 @@ int main(int argc, const char *argv[]) {
             check([p.commandDelegate.results[@"new-receive"] status] == CDVCommandStatus_OK, @"new receive resolves");
             check([p.activeCalls[@"session"][@"reportSucceeded"] boolValue], @"new call stays registered");
             check(p.provider.ended.count == 0, @"new call is not canceled by old pendingEnd");
+        } else if ([scenario isEqual:@"coalesced-incoming-reports"]) {
+            for (NSString *outcome in @[@"success", @"failure", @"dismiss", @"end"]) {
+                for (NSNumber *fromAnswer in @[@YES, @NO]) {
+                    p = [CordovaCall new];
+                    if (fromAnswer.boolValue) answer(p, @"first");
+                    else receive(p, @"first");
+                    NSMutableDictionary *entry = p.activeCalls[@"session"];
+                    void (^originalCompletion)(NSError *) = p.provider.reportCompletion;
+                    receive(p, @"second");
+                    receive(p, @"third");
+                    answer(p, @"answer");
+                    check(p.provider.reports.count == 1, @"concurrent receives share one report");
+                    check(!p.commandDelegate.results[@"second"] && !p.commandDelegate.results[@"third"],
+                        @"coalesced callers wait for original report");
+                    if ([outcome isEqual:@"dismiss"]) [p _dismissRingingCall:@"session"];
+                    if ([outcome isEqual:@"end"]) {
+                        [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                            callbackId:@"end" className:@"" methodName:@""]];
+                    }
+                    BOOL failed = [outcome isEqual:@"failure"];
+                    BOOL ended = [outcome isEqual:@"dismiss"] || [outcome isEqual:@"end"];
+                    originalCompletion(failed ? [NSError errorWithDomain:@"test" code:1 userInfo:nil] : nil);
+                    for (NSString *callbackId in @[@"second", @"third"]) {
+                        check(p.commandDelegate.results[callbackId] != nil, @"each receive callback settles");
+                        check(p.commandDelegate.results[callbackId].status ==
+                            (failed ? CDVCommandStatus_ERROR : CDVCommandStatus_OK), @"shared report result");
+                    }
+                    if (failed || ended) {
+                        check(!p.activeCalls[@"session"], @"failed or canceled report removed");
+                        check(p.commandDelegate.results[@"answer"].status == CDVCommandStatus_ERROR,
+                            @"pending answer rejects");
+                        check(p.provider.transactions.count == 0, @"no answer after failure or cancellation");
+                        if (ended) {
+                            check([p.endedSessionIds containsObject:@"session"], @"cancellation remembered");
+                            check(p.provider.ended.count == 1, @"registered canceled call ended once");
+                        }
+                    } else {
+                        check(p.activeCalls[@"session"] == entry, @"original entry retained");
+                        check(p.provider.transactions.count == 1, @"original report answers once");
+                        CXAnswerCallAction *action = [p.provider.transactions[0] action];
+                        [entry[@"pendingActivateAudioSessionEmits"]
+                            addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
+                        [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                            source:@"didActivateAudioSession"];
+                        check(p.commandDelegate.results[@"answer"].status == CDVCommandStatus_OK,
+                            @"answer resolves on activation");
+                    }
+                    check(p.commandDelegate.results[@"first"] != nil, @"original caller settles");
+                }
+            }
         } else if ([scenario isEqual:@"duplicate-report-failure"]) {
             answer(p, @"first"); p.provider.reportCompletion(nil);
             NSMutableDictionary *entry = p.activeCalls[@"session"];
@@ -658,6 +708,9 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_duplicate_report_failure(self):
         self.run_scenario("duplicate-report-failure")
+
+    def test_coalesced_incoming_reports(self):
+        self.run_scenario("coalesced-incoming-reports")
 
     def test_replacement_report_completion(self):
         self.run_scenario("replacement-report-completion")

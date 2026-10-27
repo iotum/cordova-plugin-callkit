@@ -372,6 +372,19 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                              completion:(void (^)(NSError * _Nullable error, BOOL dismissed))completion
 {
     NSMutableDictionary *entry = self.activeCalls[sessionId];
+    if ([entry[@"reportInFlight"] boolValue]) {
+        [entry[@"reportCompletions"] addObject:[completion copy]];
+        return;
+    }
+    NSMutableArray *reportCompletions = [NSMutableArray arrayWithObject:[completion copy]];
+    entry[@"reportCompletions"] = reportCompletions;
+    void (^completeReport)(NSError *, BOOL) = ^(NSError *error, BOOL dismissed) {
+        NSArray *completions = [reportCompletions copy];
+        [reportCompletions removeAllObjects];
+        for (void (^reportCompletion)(NSError *, BOOL) in completions) {
+            reportCompletion(error, dismissed);
+        }
+    };
     NSUUID *callUUID = entry[@"callUUID"];
     entry[@"reportInFlight"] = @YES;
 
@@ -386,7 +399,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.supportsDTMF = enableDTMF;
     [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
         if (self.activeCalls[sessionId] != entry) {
-            completion(error, NO);
+            completeReport(error, NO);
             return;
         }
         entry[@"reportInFlight"] = @NO;
@@ -396,7 +409,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                 [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
                 [self.activeCalls removeObjectForKey:sessionId];
             }
-            completion(error, NO);
+            completeReport(error, NO);
             return;
         }
         self.activeCalls[sessionId][@"reportSucceeded"] = @YES;
@@ -404,7 +417,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
             [self rejectPendingCommandsForSessionId:sessionId];
             [self _removeEndedCallForSessionId:sessionId];
-            completion(nil, YES);
+            completeReport(nil, YES);
             return;
         }
         // If a dismiss arrived while reportNewIncomingCallWithUUID was in-flight,
@@ -412,11 +425,11 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // This prevents the dismiss being silently dropped during cold launch.
         if ([self.activeCalls[sessionId][@"pendingDismiss"] boolValue]) {
             [self logMessage:[NSString stringWithFormat:@"reportIncomingCall completion: pendingDismiss set, ending call for sessionId: %@", sessionId]];
-            completion(nil, YES);
+            completeReport(nil, YES);
             [self _dismissRingingCall:sessionId];
             return;
         }
-        completion(nil, NO);
+        completeReport(nil, NO);
         if (self.activeCalls[sessionId] == entry && [entry[@"pendingAnswer"] boolValue]) {
             [self logMessage:[NSString stringWithFormat:@"reportIncomingCall completion: pendingAnswer set, answering call for sessionId: %@", sessionId]];
             [self _requestAnswerCallActionForSessionId:sessionId];
