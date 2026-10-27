@@ -560,6 +560,55 @@ int main(int argc, const char *argv[]) {
             check(!p.commandDelegate.results[@"send"], @"outgoing command remains pending");
             [p resolveCommandForSessionId:@"session" actionUUIDString:action.UUID.UUIDString];
             check([p.commandDelegate.results[@"send"] status] == CDVCommandStatus_OK, @"outgoing command still resolves");
+        } else if ([scenario isEqual:@"activated-end-observer-lag"]) {
+            for (NSNumber *observed in @[@YES, @NO]) {
+                for (NSNumber *otherActive in @[@YES, @NO]) {
+                    for (NSNumber *programmatic in @[@YES, @NO]) {
+                        p = [CordovaCall new];
+                        [pendingCallResponses removeAllObjects];
+                        callbackIds[@"hangup"] = [NSMutableArray arrayWithObject:@"hangup"];
+                        answer(p, @"answer"); p.provider.reportCompletion(nil);
+                        NSMutableDictionary *entry = p.activeCalls[@"session"];
+                        CXAnswerCallAction *answerAction = [p.provider.transactions[0] action];
+                        [entry[@"pendingActivateAudioSessionEmits"]
+                            addObject:@{@"uuid": answerAction.UUID.UUIDString, @"type": @"answer"}];
+                        [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                            source:@"didActivateAudioSession"];
+                        if (observed.boolValue) {
+                            p.observedCall = [CXCall new];
+                            p.observedCall.UUID = entry[@"callUUID"];
+                        }
+                        if (otherActive.boolValue) {
+                            CXCall *other = [CXCall new];
+                            other.UUID = [NSUUID UUID];
+                            p.provider.calls = @[other];
+                        }
+                        CXEndCallAction *action;
+                        if (programmatic.boolValue) {
+                            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                                callbackId:@"end" className:@"" methodName:@""]];
+                            check(p.provider.transactions.count == 2, @"activated call uses end transaction");
+                            action = (id)[p.provider.transactions.lastObject action];
+                        } else {
+                            action = [[CXEndCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
+                        }
+                        [p provider:p.provider performEndCallAction:action];
+                        if (!otherActive.boolValue) {
+                            check(p.activeCalls[@"session"] == entry, @"retain activated call until deactivation");
+                            check(!p.commandDelegate.results[@"hangup"] && !p.commandDelegate.results[@"end"],
+                                @"hangup and end await deactivation");
+                            [p provider:p.provider didDeactivateAudioSession:nil];
+                        }
+                        check(p.commandDelegate.results[@"hangup"] != nil, @"activated call emits hangup");
+                        if (programmatic.boolValue) {
+                            check(p.commandDelegate.results[@"end"].status == CDVCommandStatus_OK, @"end resolves");
+                        }
+                        check(pendingCallResponses.count == 0, @"activated call must not emit reject");
+                        check(!p.activeCalls[@"session"], @"ended call removed");
+                        check([p.endedSessionIds containsObject:@"session"], @"ended call remembered");
+                    }
+                }
+            }
         } else if ([scenario isEqual:@"end-during-report"] ||
                    [scenario isEqual:@"end-during-report-after-activation"]) {
             answer(p, @"first");
@@ -578,7 +627,11 @@ int main(int argc, const char *argv[]) {
             NSUInteger transactionsBeforeEnd = p.provider.transactions.count;
             [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
                 callbackId:@"end" className:@"" methodName:@""]];
-            check([p.commandDelegate.results[@"end"] status] == CDVCommandStatus_OK, @"end accepted");
+            if ([scenario isEqual:@"end-during-report-after-activation"]) {
+                check(!p.commandDelegate.results[@"end"], @"activated end waits for action and deactivation");
+            } else {
+                check([p.commandDelegate.results[@"end"] status] == CDVCommandStatus_OK, @"end accepted");
+            }
             check(![p.activeCalls[@"session"][@"pendingAnswer"] boolValue], @"pending answer canceled");
             check(p.provider.ended.count == 0, @"end waits for registration");
             answer(p, @"late");
@@ -587,8 +640,19 @@ int main(int argc, const char *argv[]) {
                 check([[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"pending answer rejected");
             }
             p.provider.reportCompletion(nil);
-            check(p.provider.transactions.count == transactionsBeforeEnd, @"report cannot submit another answer");
-            check([p.provider.ended.lastObject isEqual:uuid], @"end registered UUID");
+            if ([scenario isEqual:@"end-during-report-after-activation"]) {
+                check(p.provider.transactions.count == transactionsBeforeEnd + 1, @"activated end uses transaction");
+                check(!p.commandDelegate.results[@"end"], @"activated end awaits deactivation");
+                CXEndCallAction *action = (id)[p.provider.transactions.lastObject action];
+                check([action.callUUID isEqual:uuid], @"end uses activated UUID");
+                [p provider:p.provider performEndCallAction:action];
+                [p provider:p.provider didDeactivateAudioSession:nil];
+                check(p.commandDelegate.results[@"end"].status == CDVCommandStatus_OK, @"activated end resolves");
+                check(p.provider.ended.count == 0, @"end action owns activated teardown");
+            } else {
+                check(p.provider.transactions.count == transactionsBeforeEnd, @"report cannot submit another answer");
+                check([p.provider.ended.lastObject isEqual:uuid], @"end registered UUID");
+            }
             check(!p.activeCalls[@"session"] && [p.endedSessionIds containsObject:@"session"], @"end tears down session");
         } else if ([scenario isEqual:@"end-after-report-empty-observer"]) {
             answer(p, @"first"); p.provider.reportCompletion(nil);
@@ -809,6 +873,9 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_end_during_report_after_activation(self):
         self.run_scenario("end-during-report-after-activation")
+
+    def test_activated_end_observer_lag(self):
+        self.run_scenario("activated-end-observer-lag")
 
     def test_end_after_report_empty_observer(self):
         self.run_scenario("end-after-report-empty-observer")

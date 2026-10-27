@@ -692,14 +692,16 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         entry[@"pendingAnswer"] = @NO;
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
     }
-    if ([entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue] && !call.hasConnected) {
+    BOOL answerActivated = [entry[@"answerActivationCompleted"] boolValue];
+    if ([entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue] &&
+        !call.hasConnected && !answerActivated) {
         entry[@"pendingEndAfterReport"] = @YES;
         [self.endedSessionIds addObject:sessionId];
         NSDictionary *resultDict = @{ @"message": @"Call end deferred until registration", @"sessionId": sessionId };
         [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict] callbackId:command.callbackId];
         return;
     }
-    NSUUID *callUUID = call.UUID ?: ([entry[@"reportSucceeded"] boolValue] ? entry[@"callUUID"] : nil);
+    NSUUID *callUUID = call.UUID ?: (([entry[@"reportSucceeded"] boolValue] || answerActivated) ? entry[@"callUUID"] : nil);
 
     if(callUUID) {
         CXEndCallAction *endCallAction = [[CXEndCallAction alloc] initWithCallUUID:callUUID];
@@ -1426,8 +1428,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     self.activeCalls[sessionId][@"pendingEnd"] = @YES;
     self.activeCalls[sessionId][@"pendingAnswer"] = @NO;
     [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
-    if(call) {
-        if(call.hasConnected) {
+    BOOL answerActivated = [self.activeCalls[sessionId][@"answerActivationCompleted"] boolValue];
+    if(call || answerActivated) {
+        if(call.hasConnected || answerActivated) {
             // Defer the hangup event and endCall promise resolution to didDeactivateAudioSession
             // so that audio is fully torn down before JS is notified.
             [self.activeCalls[sessionId][@"pendingDeactivateAudioSessionEmits"] addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"hangup"}];
