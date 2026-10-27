@@ -536,7 +536,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         }
         return;
     }
-    if ([entry[@"answerRequested"] boolValue]) {
+    if ([entry[@"answerRequested"] boolValue] || [self _hasPendingAnswerEmitForSessionId:sessionId]) {
         return;
     }
     entry[@"answerRequested"] = @YES;

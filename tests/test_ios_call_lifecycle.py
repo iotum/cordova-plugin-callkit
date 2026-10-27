@@ -475,6 +475,35 @@ int main(int argc, const char *argv[]) {
                 check([p.commandDelegate.results[@"receive"] status] == CDVCommandStatus_OK, @"receive callback settles");
                 check(p.provider.ended.count == 0, @"normal end action owns connected teardown");
             }
+        } else if ([scenario isEqual:@"pending-ui-answer"]) {
+            for (NSNumber *observed in @[@YES, @NO]) {
+                p = [CordovaCall new];
+                [pendingCallResponses removeAllObjects];
+                receive(p, @"receive"); p.provider.reportCompletion(nil);
+                NSMutableDictionary *entry = p.activeCalls[@"session"];
+                if (observed.boolValue) {
+                    p.observedCall = [CXCall new];
+                    p.observedCall.UUID = entry[@"callUUID"];
+                }
+                [entry[@"pendingActivateAudioSessionEmits"]
+                    addObject:@{@"uuid": [NSUUID UUID].UUIDString, @"type": @"answer"}];
+                p.provider.transactionError = [NSError errorWithDomain:@"already-answered" code:1 userInfo:nil];
+                answer(p, @"first"); answer(p, @"retry");
+                check(p.provider.transactions.count == 0, @"pending UI answer does not submit duplicate transaction");
+                check(!p.commandDelegate.results[@"first"] && !p.commandDelegate.results[@"retry"],
+                    @"API callers wait for existing UI answer activation");
+                [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                    source:@"didActivateAudioSession"];
+                for (NSString *callbackId in @[@"first", @"retry"]) {
+                    check(p.commandDelegate.results[callbackId].status == CDVCommandStatus_OK,
+                        @"UI activation resolves API waiters");
+                }
+                check(pendingCallResponses.count == 1, @"original UI answer event is preserved once");
+                answer(p, @"after-activation");
+                check(p.commandDelegate.results[@"after-activation"].status == CDVCommandStatus_OK,
+                    @"retry after activation resolves");
+                check(p.provider.transactions.count == 0, @"no extra transactions after activation");
+            }
         } else if ([scenario isEqual:@"transaction-failure"]) {
             p.provider.transactionError = [NSError errorWithDomain:@"test" code:2 userInfo:nil];
             answer(p, @"first"); p.provider.reportCompletion(nil);
@@ -753,6 +782,9 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_transaction_failure(self):
         self.run_scenario("transaction-failure")
+
+    def test_pending_ui_answer(self):
+        self.run_scenario("pending-ui-answer")
 
     def test_retry_after_activation_empty_observer(self):
         self.run_scenario("retry-after-activation-empty-observer")

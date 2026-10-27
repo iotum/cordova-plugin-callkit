@@ -44,6 +44,7 @@ answered call; create media then. Do not wait for WebRTC's `audioSessionDidStart
 peer connection exists. A programmatic answer does not emit the `answer` event.
 Once an incoming-call report succeeds, answers reuse its UUID even if CallKit's call observer has not updated yet.
 Concurrent incoming-call reports for the same session share one CallKit report and receive its completion result.
+If a CallKit UI answer is already awaiting audio activation, `answerCall` waits for it instead of submitting another answer.
 Delayed VoIP pushes for ended sessions are discarded without ringing or forwarding their stale payload to JavaScript.
 They report and immediately end a dummy call to satisfy PushKit's incoming-call reporting requirement.
 
