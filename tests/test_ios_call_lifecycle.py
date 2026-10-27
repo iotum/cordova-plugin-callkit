@@ -380,6 +380,33 @@ int main(int argc, const char *argv[]) {
             [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
                 source:@"didActivateAudioSession"];
             check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_OK, @"answer resolves on activation");
+        } else if ([scenario isEqual:@"end-during-registered-duplicate"]) {
+            for (NSNumber *failed in @[@YES, @NO]) {
+                for (NSNumber *observed in @[@YES, @NO]) {
+                    p = [CordovaCall new];
+                    receive(p, @"first"); p.provider.reportCompletion(nil);
+                    NSMutableDictionary *entry = p.activeCalls[@"session"];
+                    if (observed.boolValue) {
+                        p.observedCall = [CXCall new];
+                        p.observedCall.UUID = entry[@"callUUID"];
+                    }
+                    receive(p, @"duplicate");
+                    [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                        callbackId:@"end" className:@"" methodName:@""]];
+                    check(p.provider.transactions.count == 1, @"registered call ends without waiting for duplicate");
+                    CXEndCallAction *action = (id)[p.provider.transactions[0] action];
+                    check([action.callUUID isEqual:entry[@"callUUID"]], @"end uses registered UUID");
+                    check(!p.commandDelegate.results[@"end"], @"end waits for action instead of returning early success");
+                    check(![entry[@"pendingEndAfterReport"] boolValue], @"no deferred end for registered call");
+                    p.provider.reportCompletion(failed.boolValue ?
+                        [NSError errorWithDomain:@"duplicate" code:2 userInfo:nil] : nil);
+                    check(p.activeCalls[@"session"] == entry, @"duplicate completion preserves pending end");
+                    [p provider:p.provider performEndCallAction:action];
+                    check(p.commandDelegate.results[@"end"].status == CDVCommandStatus_OK, @"end resolves");
+                    check(!p.activeCalls[@"session"], @"end removes entry");
+                    check([p.endedSessionIds containsObject:@"session"], @"end remembered");
+                }
+            }
         } else if ([scenario isEqual:@"replacement-report-completion"]) {
             for (NSNumber *failed in @[@YES, @NO]) {
                 for (NSNumber *fromAnswer in @[@YES, @NO]) {
@@ -711,6 +738,9 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_coalesced_incoming_reports(self):
         self.run_scenario("coalesced-incoming-reports")
+
+    def test_end_during_registered_duplicate(self):
+        self.run_scenario("end-during-registered-duplicate")
 
     def test_replacement_report_completion(self):
         self.run_scenario("replacement-report-completion")

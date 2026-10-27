@@ -692,7 +692,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         entry[@"pendingAnswer"] = @NO;
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
     }
-    if ([entry[@"reportInFlight"] boolValue] && !call.hasConnected) {
+    if ([entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue] && !call.hasConnected) {
         entry[@"pendingEndAfterReport"] = @YES;
         [self.endedSessionIds addObject:sessionId];
         NSDictionary *resultDict = @{ @"message": @"Call end deferred until registration", @"sessionId": sessionId };
