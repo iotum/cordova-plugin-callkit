@@ -1,6 +1,7 @@
 """Run production lifecycle methods with deterministic CallKit/PushKit doubles on macOS."""
 
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -88,6 +89,22 @@ NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 }
 @end
 
+@interface CXStartCallAction : CXAnswerCallAction
+@property NSString *contactIdentifier;
+@property BOOL video;
+- (instancetype)initWithCallUUID:(NSUUID *)uuid handle:(CXHandle *)handle;
+@end
+@implementation CXStartCallAction
+- (instancetype)initWithCallUUID:(NSUUID *)uuid handle:(CXHandle *)handle {
+    return [super initWithCallUUID:uuid];
+}
+@end
+
+@interface CXEndCallAction : CXAnswerCallAction
+@end
+@implementation CXEndCallAction
+@end
+
 @interface CXTransaction : NSObject
 @property CXAnswerCallAction *action;
 - (instancetype)initWithAction:(CXAnswerCallAction *)action;
@@ -159,6 +176,7 @@ typedef NSString *PKPushType;
 @property NSString *VoIPPushClassName, *VoIPPushMethodName, *VoIPPushCallbackId;
 @property CXCall *observedCall;
 - (void)logMessage:(NSString *)message;
+- (void)stopKeepAlive:(CDVInvokedUrlCommand *)command;
 - (CXCall *)callForSessionId:(NSString *)sessionId;
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId;
 - (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId;
@@ -171,11 +189,9 @@ typedef NSString *PKPushType;
     self.VoIPPushCallbackId = @"push"; return self;
 }
 - (void)logMessage:(NSString *)message {}
+- (void)stopKeepAlive:(CDVInvokedUrlCommand *)command {}
 - (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId {}
 - (CXCall *)callForSessionId:(NSString *)sessionId { return self.observedCall; }
-- (void)rejectPendingCommandsForSessionId:(NSString *)sessionId {
-    [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
-}
 """
 
 TESTS = r"""
@@ -270,6 +286,117 @@ int main(int argc, const char *argv[]) {
             check(p.provider.transactions.count == 0, @"no answer after dismiss");
             check([p.endedSessionIds containsObject:@"session"], @"remember dismiss");
             check([[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"ended result");
+        } else if ([scenario isEqual:@"answer-after-pending-dismiss"]) {
+            answer(p, @"first");
+            NSUUID *uuid = p.activeCalls[@"session"][@"callUUID"];
+            [p _dismissRingingCall:@"session"];
+            check([[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"dismiss cancels waiter immediately");
+            p.observedCall = [CXCall new];
+            p.observedCall.UUID = uuid;
+            answer(p, @"late");
+            check([p.commandDelegate.results[@"late"] status] == CDVCommandStatus_ERROR, @"pending dismiss rejects answer");
+            check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"ended result");
+            check([p.activeCalls[@"session"][@"answerWaiters"] count] == 0, @"no new waiter");
+            check(p.provider.transactions.count == 0, @"no answer action before completion");
+            p.provider.reportCompletion(nil);
+            check([p.provider.ended.lastObject isEqual:uuid], @"deferred dismiss ends original UUID");
+            check(!p.activeCalls[@"session"], @"dismiss removes session");
+        } else if ([scenario isEqual:@"outgoing-before-observer"]) {
+            [p sendCall:[[CDVInvokedUrlCommand alloc]
+                initWithArguments:@[@"Caller", @"123", @"session"]
+                callbackId:@"send" className:@"" methodName:@""]];
+            NSMutableDictionary *entry = p.activeCalls[@"session"];
+            CXStartCallAction *action = (id)[p.provider.transactions[0] action];
+            answer(p, @"first");
+            check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_ERROR, @"outgoing answer rejected");
+            check([[p.commandDelegate.results[@"first"] value][@"message"] isEqual:@"Not an incoming call"], @"direction error");
+            check(p.activeCalls[@"session"] == entry, @"preserve outgoing entry");
+            check(entry[@"callUUID"] == action.callUUID, @"preserve start UUID");
+            check(p.provider.reports.count == 0 && p.provider.transactions.count == 1, @"no incoming report or answer");
+            check(!p.commandDelegate.results[@"send"], @"outgoing command remains pending");
+            [p resolveCommandForSessionId:@"session" actionUUIDString:action.UUID.UUIDString];
+            check([p.commandDelegate.results[@"send"] status] == CDVCommandStatus_OK, @"outgoing command still resolves");
+        } else if ([scenario isEqual:@"end-during-report"] ||
+                   [scenario isEqual:@"end-during-report-after-activation"]) {
+            answer(p, @"first");
+            NSUUID *uuid = p.activeCalls[@"session"][@"callUUID"];
+            if ([scenario isEqual:@"end-during-report-after-activation"]) {
+                p.observedCall = [CXCall new];
+                p.observedCall.UUID = uuid;
+                answer(p, @"retry");
+                CXAnswerCallAction *action = [p.provider.transactions[0] action];
+                [p.activeCalls[@"session"][@"pendingActivateAudioSessionEmits"]
+                    addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
+                [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                    source:@"didActivateAudioSession"];
+                p.observedCall = nil;
+            }
+            NSUInteger transactionsBeforeEnd = p.provider.transactions.count;
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"end" className:@"" methodName:@""]];
+            check([p.commandDelegate.results[@"end"] status] == CDVCommandStatus_OK, @"end accepted");
+            check(![p.activeCalls[@"session"][@"pendingAnswer"] boolValue], @"pending answer canceled");
+            check(p.provider.ended.count == 0, @"end waits for registration");
+            answer(p, @"late");
+            check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"end blocks answer retry");
+            if ([scenario isEqual:@"end-during-report"]) {
+                check([[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"pending answer rejected");
+            }
+            p.provider.reportCompletion(nil);
+            check(p.provider.transactions.count == transactionsBeforeEnd, @"report cannot submit another answer");
+            check([p.provider.ended.lastObject isEqual:uuid], @"end registered UUID");
+            check(!p.activeCalls[@"session"] && [p.endedSessionIds containsObject:@"session"], @"end tears down session");
+        } else if ([scenario isEqual:@"end-after-report-empty-observer"]) {
+            answer(p, @"first"); p.provider.reportCompletion(nil);
+            NSUUID *uuid = p.activeCalls[@"session"][@"callUUID"];
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"end" className:@"" methodName:@""]];
+            check([[p.commandDelegate.results[@"first"] value][@"callEnded"] boolValue], @"end rejects answer waiter");
+            check(p.provider.transactions.count == 2, @"submit end transaction");
+            CXEndCallAction *action = (id)[p.provider.transactions.lastObject action];
+            check([action isKindOfClass:[CXEndCallAction class]], @"end action");
+            check(action.callUUID == uuid, @"use stored UUID");
+            answer(p, @"late");
+            check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"end blocks retries");
+        } else if ([scenario isEqual:@"canceled-report-failure"]) {
+            for (NSString *cancel in @[@"end", @"dismiss"]) {
+                p = [CordovaCall new];
+                answer(p, @"first");
+                if ([cancel isEqual:@"end"]) {
+                    [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                        callbackId:@"end" className:@"" methodName:@""]];
+                } else {
+                    [p _dismissRingingCall:@"session"];
+                }
+                p.provider.reportCompletion([NSError errorWithDomain:@"test" code:1 userInfo:nil]);
+                check(!p.activeCalls[@"session"], @"failed report removed");
+                answer(p, @"late");
+                check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"cancellation survives report failure");
+                check(p.provider.reports.count == 1, @"no resurrection after failed report");
+            }
+        } else if ([scenario isEqual:@"dismiss-before-entry"]) {
+            check(![p _dismissRingingCall:nil] && ![p _dismissRingingCall:@""] &&
+                ![p _dismissRingingCall:(id)[NSNull null]], @"invalid dismiss ignored");
+            check([p _dismissRingingCall:@"session"], @"remember valid dismiss");
+            check([p.endedSessionIds containsObject:@"session"], @"record ended session");
+            answer(p, @"late");
+            check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"reject stale answer");
+            check(p.provider.reports.count == 0, @"answer does not resurrect call");
+            __block int completed = 0;
+            [p pushRegistry:nil didReceiveIncomingPushWithPayload:push() forType:nil
+                withCompletionHandler:^{ completed++; }];
+            check(completed == 1 && !p.commandDelegate.results[@"push"], @"stale push discarded");
+            NSUUID *dummy = p.provider.reports.lastObject;
+            p.provider.reportCompletion(nil);
+            check([p.provider.ended.lastObject isEqual:dummy], @"dummy call ended");
+            check(!p.activeCalls[@"session"], @"no entry created");
+        } else if ([scenario isEqual:@"dismiss-connected"]) {
+            p.activeCalls[@"session"] = [p newActiveCallEntryWithUUID:[NSUUID UUID]];
+            p.observedCall = [CXCall new];
+            p.observedCall.hasConnected = YES;
+            check(![p _dismissRingingCall:@"session"], @"connected call untouched");
+            check(![p.endedSessionIds containsObject:@"session"], @"connected session not marked ended");
+            check(p.activeCalls[@"session"] && p.provider.ended.count == 0, @"connected session preserved");
         } else if ([scenario isEqual:@"ended-answer"]) {
             [p _removeEndedCallForSessionId:@"session"]; answer(p, @"late");
             check([p.commandDelegate.results[@"late"] status] == CDVCommandStatus_ERROR, @"reject ended session");
@@ -342,6 +469,9 @@ METHODS = [
     "_requestAnswerCallActionForSessionId:",
     "_hasPendingAnswerEmitForSessionId:",
     "_settleAnswerWaitersForSessionId:",
+    "sendCall:",
+    "endCall:",
+    "rejectPendingCommandsForSessionId:",
     "processPendingActivateEmitsSkippingTypes:",
     "resolveCommandForSessionId:",
     "_removeEndedCallForSessionId:",
@@ -361,7 +491,7 @@ class IOSCallLifecycleTests(unittest.TestCase):
             start = next(
                 source.index(line)
                 for line in source.splitlines()
-                if line.startswith("- (") and name in line
+                if line.startswith("- (") and re.search(r"\b" + re.escape(name), line)
             )
             # Include only the selected production method, not comments before the next method.
             end = source.index("\n}\n", start) + len("\n}\n")
@@ -397,6 +527,30 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_dismiss_during_report(self):
         self.run_scenario("dismiss-during-report")
+
+    def test_answer_after_pending_dismiss(self):
+        self.run_scenario("answer-after-pending-dismiss")
+
+    def test_outgoing_before_observer(self):
+        self.run_scenario("outgoing-before-observer")
+
+    def test_end_during_report(self):
+        self.run_scenario("end-during-report")
+
+    def test_end_during_report_after_activation(self):
+        self.run_scenario("end-during-report-after-activation")
+
+    def test_end_after_report_empty_observer(self):
+        self.run_scenario("end-after-report-empty-observer")
+
+    def test_canceled_report_failure(self):
+        self.run_scenario("canceled-report-failure")
+
+    def test_dismiss_before_entry(self):
+        self.run_scenario("dismiss-before-entry")
+
+    def test_dismiss_connected(self):
+        self.run_scenario("dismiss-connected")
 
     def test_ended_answer(self):
         self.run_scenario("ended-answer")
