@@ -504,6 +504,101 @@ int main(int argc, const char *argv[]) {
                     @"retry after activation resolves");
                 check(p.provider.transactions.count == 0, @"no extra transactions after activation");
             }
+        } else if ([scenario isEqual:@"replacement-answer-completion"]) {
+            p.provider.deferTransactionCompletion = YES;
+            answer(p, @"old"); p.provider.reportCompletion(nil);
+            void (^oldCompletion)(NSError *) = p.provider.transactionCompletion;
+            [p _dismissRingingCall:@"session"];
+            check([p.commandDelegate.results[@"old"].value[@"callEnded"] boolValue],
+                @"original waiter rejected during dismissal");
+            receive(p, @"replacement"); p.provider.reportCompletion(nil);
+            answer(p, @"new");
+            NSMutableDictionary *entry = p.activeCalls[@"session"];
+            oldCompletion([NSError errorWithDomain:@"old-answer" code:1 userInfo:nil]);
+            check(!p.commandDelegate.results[@"new"], @"old failure cannot reject replacement waiter");
+            check([entry[@"answerRequested"] boolValue], @"replacement answer remains in flight");
+            check([entry[@"callbackMap"] count] == 1, @"replacement answer callback preserved");
+            check([entry[@"answerWaiters"] count] == 1, @"replacement waiter preserved");
+            p.provider.transactionCompletion(nil);
+            [entry[@"pendingActivateAudioSessionEmits"] addObject:@{
+                @"uuid": [p.provider.transactions.lastObject action].UUID.UUIDString, @"type": @"answer"}];
+            [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                source:@"didActivateAudioSession"];
+            check(p.commandDelegate.results[@"new"].status == CDVCommandStatus_OK,
+                @"replacement activation resolves waiter");
+        } else if ([scenario isEqual:@"replacement-end-completion"]) {
+            p.provider.deferTransactionCompletion = YES;
+            receive(p, @"old"); p.provider.reportCompletion(nil);
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"old-end" className:@"" methodName:@""]];
+            void (^oldCompletion)(NSError *) = p.provider.transactionCompletion;
+            [p _dismissRingingCall:@"session"];
+            receive(p, @"replacement"); p.provider.reportCompletion(nil);
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"new-end" className:@"" methodName:@""]];
+            NSMutableDictionary *entry = p.activeCalls[@"session"];
+            oldCompletion([NSError errorWithDomain:@"old-end" code:1 userInfo:nil]);
+            check(p.commandDelegate.results[@"old-end"].status == CDVCommandStatus_ERROR,
+                @"original end command still receives error");
+            check([entry[@"pendingEnd"] boolValue], @"old failure cannot clear replacement cancellation");
+            check([entry[@"callbackMap"] count] == 1, @"replacement end callback preserved");
+            check(!p.commandDelegate.results[@"new-end"], @"replacement end remains pending");
+            NSUInteger count = p.provider.transactions.count;
+            answer(p, @"late");
+            check([p.commandDelegate.results[@"late"].value[@"callEnded"] boolValue],
+                @"replacement teardown rejects answer");
+            check(p.provider.transactions.count == count, @"no answer during replacement teardown");
+            p.provider.transactionCompletion([NSError errorWithDomain:@"new-end" code:2 userInfo:nil]);
+            check(![entry[@"pendingEnd"] boolValue], @"current end failure clears its cancellation");
+            check([entry[@"callbackMap"] count] == 0, @"current end failure removes callback");
+            check(p.commandDelegate.results[@"new-end"].status == CDVCommandStatus_ERROR,
+                @"replacement end receives its own error");
+        } else if ([scenario isEqual:@"ui-answer-during-transaction"]) {
+            for (NSNumber *observed in @[@YES, @NO]) {
+                for (NSString *state in @[@"pending", @"activated", @"ended", @"canceled"]) {
+                    p = [CordovaCall new];
+                    [pendingCallResponses removeAllObjects];
+                    p.provider.deferTransactionCompletion = YES;
+                    answer(p, @"first"); p.provider.reportCompletion(nil);
+                    void (^answerCompletion)(NSError *) = p.provider.transactionCompletion;
+                    answer(p, @"retry");
+                    NSMutableDictionary *entry = p.activeCalls[@"session"];
+                    if (observed.boolValue || [state isEqual:@"ended"]) {
+                        p.observedCall = [CXCall new];
+                        p.observedCall.UUID = entry[@"callUUID"];
+                    }
+                    [entry[@"pendingActivateAudioSessionEmits"] addObject:@{
+                        @"uuid": [NSUUID UUID].UUIDString, @"type": @"answer"}];
+                    if ([state isEqual:@"activated"]) {
+                        [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                            source:@"didActivateAudioSession"];
+                        answer(p, @"after-activation");
+                    } else if ([state isEqual:@"ended"]) {
+                        p.observedCall.hasEnded = YES;
+                    } else if ([state isEqual:@"canceled"]) {
+                        [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                            callbackId:@"end" className:@"" methodName:@""]];
+                    }
+                    answerCompletion([NSError errorWithDomain:@"already-answered" code:1 userInfo:nil]);
+                    if ([state isEqual:@"pending"]) {
+                        check(!p.commandDelegate.results[@"first"] && !p.commandDelegate.results[@"retry"],
+                            @"UI answer queued during transaction keeps waiters pending");
+                        [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                            source:@"didActivateAudioSession"];
+                    }
+                    BOOL ended = [state isEqual:@"ended"] || [state isEqual:@"canceled"];
+                    for (NSString *callbackId in @[@"first", @"retry"]) {
+                        CDVPluginResult *result = p.commandDelegate.results[callbackId];
+                        check(result && result.status == (ended ? CDVCommandStatus_ERROR : CDVCommandStatus_OK),
+                            @"UI answer resolves waiters unless call ended");
+                        check([result.value[@"callEnded"] boolValue] == ended, @"correct ended flag");
+                    }
+                    if ([state isEqual:@"activated"]) {
+                        check(p.commandDelegate.results[@"after-activation"].status == CDVCommandStatus_OK,
+                            @"activation remains successful after transaction failure");
+                    }
+                }
+            }
         } else if ([scenario isEqual:@"transaction-failure"]) {
             p.provider.transactionError = [NSError errorWithDomain:@"test" code:2 userInfo:nil];
             answer(p, @"first"); p.provider.reportCompletion(nil);
@@ -682,6 +777,28 @@ int main(int argc, const char *argv[]) {
                 check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"cancellation survives report failure");
                 check(p.provider.reports.count == 1, @"no resurrection after failed report");
             }
+        } else if ([scenario isEqual:@"end-before-entry"]) {
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"end" className:@"" methodName:@""]];
+            check(p.commandDelegate.results[@"end"].status == CDVCommandStatus_OK, @"unknown end remains successful");
+            check([p.endedSessionIds containsObject:@"session"], @"end records canceled session");
+            answer(p, @"late");
+            check([p.commandDelegate.results[@"late"].value[@"callEnded"] boolValue], @"reject stale answer");
+            check(p.provider.reports.count == 0, @"stale answer cannot report canceled call");
+            __block int completed = 0;
+            [p pushRegistry:nil didReceiveIncomingPushWithPayload:push() forType:nil
+                withCompletionHandler:^{ completed++; }];
+            check(completed == 1 && !p.commandDelegate.results[@"push"], @"stale push discarded");
+            check(!p.activeCalls[@"session"] && [p.endedSessionIds containsObject:@"session"],
+                @"stale push cannot recreate canceled entry");
+            NSUUID *dummy = p.provider.reports.lastObject;
+            p.provider.reportCompletion(nil);
+            check([p.provider.ended.lastObject isEqual:dummy], @"dummy call ended");
+            receive(p, @"fresh"); p.provider.reportCompletion(nil);
+            check(![p.endedSessionIds containsObject:@"session"], @"explicit receive clears cancellation");
+            answer(p, @"fresh-answer");
+            check(p.provider.transactions.count == 1 && !p.commandDelegate.results[@"fresh-answer"],
+                @"explicit receive permits a fresh answer");
         } else if ([scenario isEqual:@"dismiss-before-entry"]) {
             check(![p _dismissRingingCall:nil] && ![p _dismissRingingCall:@""] &&
                 ![p _dismissRingingCall:(id)[NSNull null]], @"invalid dismiss ignored");
@@ -846,6 +963,18 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_transaction_failure(self):
         self.run_scenario("transaction-failure")
+
+    def test_replacement_answer_completion(self):
+        self.run_scenario("replacement-answer-completion")
+
+    def test_replacement_end_completion(self):
+        self.run_scenario("replacement-end-completion")
+
+    def test_ui_answer_during_transaction(self):
+        self.run_scenario("ui-answer-during-transaction")
+
+    def test_end_before_entry(self):
+        self.run_scenario("end-before-entry")
 
     def test_pending_ui_answer(self):
         self.run_scenario("pending-ui-answer")

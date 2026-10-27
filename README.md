@@ -45,6 +45,9 @@ peer connection exists. A programmatic answer does not emit the `answer` event.
 Once an incoming-call report succeeds, answers reuse its UUID even if CallKit's call observer has not updated yet.
 Concurrent incoming-call reports for the same session share one CallKit report and receive its completion result.
 If a CallKit UI answer is already awaiting audio activation, `answerCall` waits for it instead of submitting another answer.
+This also applies when the UI answer arrives while a programmatic answer transaction is awaiting its result.
+Ending a session before it has been reported blocks stale answers and delayed pushes until an explicit new
+`receiveCall` or outgoing call reuses that session.
 After answer activation, ending the call follows the normal `hangup`/audio-deactivation path even if the observer
 still lacks the call or reports it as unconnected.
 Delayed VoIP pushes for ended sessions are discarded without ringing or forwarding their stale payload to JavaScript.

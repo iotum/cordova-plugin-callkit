@@ -551,17 +551,25 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             return;
         }
         [self logMessage:[NSString stringWithFormat:@"answerCall: CXAnswerCallAction failed for sessionId %@: %@", sessionId, error.localizedDescription]];
-        [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:answerAction.UUID.UUIDString];
-        self.activeCalls[sessionId][@"answerRequested"] = @NO;
+        if (self.activeCalls[sessionId] != entry) {
+            return;
+        }
+        [entry[@"callbackMap"] removeObjectForKey:answerAction.UUID.UUIDString];
+        entry[@"answerRequested"] = @NO;
         CXCall *currentCall = [self callForSessionId:sessionId];
-        if (currentCall.hasConnected && !currentCall.hasEnded) {
+        if (currentCall.hasEnded || [entry[@"pendingDismiss"] boolValue] || [entry[@"pendingEnd"] boolValue]) {
+            [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+            return;
+        }
+        if (currentCall.hasConnected || [entry[@"answerActivationCompleted"] boolValue] ||
+            [self _hasPendingAnswerEmitForSessionId:sessionId]) {
             // Answered meanwhile (e.g. in the CallKit UI): settle once its audio activation was handled
             if (![self _hasPendingAnswerEmitForSessionId:sessionId]) {
                 [self _settleAnswerWaitersForSessionId:sessionId errorMessage:nil];
             }
             return;
         }
-        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:currentCall.hasEnded ? ANSWER_ERROR_CALL_ENDED : [error localizedDescription]];
+        [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
     }];
 }
 
@@ -691,6 +699,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         entry[@"pendingEnd"] = @YES;
         entry[@"pendingAnswer"] = @NO;
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
+    } else if (!call && [sessionId isKindOfClass:[NSString class]] && sessionId.length > 0) {
+        [self.endedSessionIds addObject:sessionId];
     }
     BOOL answerActivated = [entry[@"answerActivationCompleted"] boolValue];
     if ([entry[@"reportInFlight"] boolValue] && ![entry[@"reportSucceeded"] boolValue] &&
@@ -712,8 +722,10 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self.callController requestTransaction:transaction completion:^(NSError * _Nullable error) {
             if (error != nil) {
                 // Transaction was rejected before reaching performEndCallAction — clean up.
-                [self.activeCalls[sessionId][@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
-                self.activeCalls[sessionId][@"pendingEnd"] = @NO;
+                if (self.activeCalls[sessionId] == entry) {
+                    [entry[@"callbackMap"] removeObjectForKey:endCallAction.UUID.UUIDString];
+                    entry[@"pendingEnd"] = @NO;
+                }
                 [self logMessage:[error localizedDescription]];
                 NSDictionary *resultDict = @{ @"message": [error localizedDescription], @"sessionId": sessionId };
                 CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsDictionary:resultDict];
