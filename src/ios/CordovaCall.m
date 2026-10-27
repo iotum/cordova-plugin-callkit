@@ -371,8 +371,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
                                  callId:(NSString *)callId
                              completion:(void (^)(NSError * _Nullable error, BOOL dismissed))completion
 {
-    NSUUID *callUUID = self.activeCalls[sessionId][@"callUUID"];
-    self.activeCalls[sessionId][@"reportInFlight"] = @YES;
+    NSMutableDictionary *entry = self.activeCalls[sessionId];
+    NSUUID *callUUID = entry[@"callUUID"];
+    entry[@"reportInFlight"] = @YES;
 
     CXHandle *handle = [[CXHandle alloc] initWithType:CXHandleTypePhoneNumber value:callId];
     CXCallUpdate *callUpdate = [[CXCallUpdate alloc] init];
@@ -384,15 +385,22 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
     callUpdate.supportsHolding = YES;
     callUpdate.supportsDTMF = enableDTMF;
     [self.provider reportNewIncomingCallWithUUID:callUUID update:callUpdate completion:^(NSError * _Nullable error) {
-        self.activeCalls[sessionId][@"reportInFlight"] = @NO;
+        if (self.activeCalls[sessionId] != entry) {
+            completion(error, NO);
+            return;
+        }
+        entry[@"reportInFlight"] = @NO;
         if (error != nil) {
-            self.activeCalls[sessionId][@"pendingAnswer"] = @NO;
-            [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
+            if (![entry[@"reportSucceeded"] boolValue]) {
+                entry[@"pendingAnswer"] = @NO;
+                [self _settleAnswerWaitersForSessionId:sessionId errorMessage:[error localizedDescription]];
+                [self.activeCalls removeObjectForKey:sessionId];
+            }
             completion(error, NO);
             return;
         }
         self.activeCalls[sessionId][@"reportSucceeded"] = @YES;
-        if ([self.activeCalls[sessionId][@"pendingEnd"] boolValue]) {
+        if ([entry[@"pendingEndAfterReport"] boolValue]) {
             [self.provider reportCallWithUUID:callUUID endedAtDate:nil reason:CXCallEndedReasonRemoteEnded];
             [self rejectPendingCommandsForSessionId:sessionId];
             [self _removeEndedCallForSessionId:sessionId];
@@ -409,7 +417,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             return;
         }
         completion(nil, NO);
-        if ([self.activeCalls[sessionId][@"pendingAnswer"] boolValue]) {
+        if (self.activeCalls[sessionId] == entry && [entry[@"pendingAnswer"] boolValue]) {
             [self logMessage:[NSString stringWithFormat:@"reportIncomingCall completion: pendingAnswer set, answering call for sessionId: %@", sessionId]];
             [self _requestAnswerCallActionForSessionId:sessionId];
         }
@@ -494,7 +502,6 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         [self _reportIncomingCallForSessionId:sessionId callName:callName callId:callId completion:^(NSError * _Nullable error, BOOL dismissed) {
             if (error != nil) {
                 [self logMessage:[NSString stringWithFormat:@"answerCall: failed to report incoming call for sessionId %@: %@", sessionId, error.localizedDescription]];
-                [self.activeCalls removeObjectForKey:sessionId];
             }
         }];
     }
@@ -672,7 +679,8 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         entry[@"pendingAnswer"] = @NO;
         [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
     }
-    if ([entry[@"reportInFlight"] boolValue]) {
+    if ([entry[@"reportInFlight"] boolValue] && !call.hasConnected) {
+        entry[@"pendingEndAfterReport"] = @YES;
         [self.endedSessionIds addObject:sessionId];
         NSDictionary *resultDict = @{ @"message": @"Call end deferred until registration", @"sessionId": sessionId };
         [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:resultDict] callbackId:command.callbackId];
@@ -1402,6 +1410,9 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         return;
     }
     CXCall *call = [self callForSessionId:sessionId];
+    self.activeCalls[sessionId][@"pendingEnd"] = @YES;
+    self.activeCalls[sessionId][@"pendingAnswer"] = @NO;
+    [self _settleAnswerWaitersForSessionId:sessionId errorMessage:ANSWER_ERROR_CALL_ENDED];
     if(call) {
         if(call.hasConnected) {
             // Defer the hangup event and endCall promise resolution to didDeactivateAudioSession
@@ -1663,6 +1674,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         @"pendingDeactivateAudioSessionEmits": [NSMutableArray array],
         @"pendingDismiss": @NO,
         @"pendingEnd": @NO,
+        @"pendingEndAfterReport": @NO,
         @"isOutgoing": @NO,
         @"reportInFlight": @NO,
         @"reportSucceeded": @NO,

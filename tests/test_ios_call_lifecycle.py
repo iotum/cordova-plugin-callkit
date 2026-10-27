@@ -13,7 +13,7 @@ SOURCE = ROOT / "src/ios/CordovaCall.m"
 PREAMBLE = r"""
 #import <Foundation/Foundation.h>
 
-enum { CDVCommandStatus_OK, CDVCommandStatus_ERROR };
+enum { CDVCommandStatus_OK = 1, CDVCommandStatus_ERROR = 9 };
 enum { CXHandleTypePhoneNumber, CXCallEndedReasonRemoteEnded, CXCallEndedReasonFailed };
 BOOL enableDTMF = YES, hasVideo = NO;
 NSString *callBackUrl;
@@ -22,6 +22,28 @@ NSMutableDictionary *callbackIds;
 NSMutableArray *pendingCallResponses;
 NSDictionary *pendingCallFromRecents;
 NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
+NSString *PENDING_RESPONSE_REJECT = @"pendingResponseReject";
+BOOL monitorAudioRouteChange, callKitAudioSessionActive;
+
+@interface AVAudioSession : NSObject
+@property AVAudioSession *currentRoute;
+@property NSArray<AVAudioSession *> *outputs;
+@property NSString *portType;
++ (instancetype)sharedInstance;
+@end
+@implementation AVAudioSession
++ (instancetype)sharedInstance { return [self new]; }
+@end
+
+@interface RTCAudioSession : NSObject
+@property BOOL isAudioEnabled;
++ (instancetype)sharedInstance;
+- (void)audioSessionDidDeactivate:(AVAudioSession *)session;
+@end
+@implementation RTCAudioSession
++ (instancetype)sharedInstance { return [self new]; }
+- (void)audioSessionDidDeactivate:(AVAudioSession *)session {}
+@end
 
 @interface CDVPluginResult : NSObject
 @property int status;
@@ -82,8 +104,10 @@ NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 @interface CXAnswerCallAction : NSObject
 @property NSUUID *UUID, *callUUID;
 - (instancetype)initWithCallUUID:(NSUUID *)uuid;
+- (void)fulfill;
 @end
 @implementation CXAnswerCallAction
+- (void)fulfill {}
 - (instancetype)initWithCallUUID:(NSUUID *)uuid {
     self = [super init]; self.UUID = [NSUUID UUID]; self.callUUID = uuid; return self;
 }
@@ -117,6 +141,8 @@ NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 
 @interface FakeCallKit : NSObject
 @property NSMutableArray *reports, *ended, *transactions;
+@property NSArray *calls;
+@property (readonly) FakeCallKit *callObserver;
 @property (copy) void (^reportCompletion)(NSError *);
 @property NSError *transactionError;
 @property BOOL deferTransactionCompletion;
@@ -127,6 +153,7 @@ NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
 - (void)requestTransaction:(CXTransaction *)transaction completion:(void (^)(NSError *))completion;
 @end
 @implementation FakeCallKit
+- (FakeCallKit *)callObserver { return self; }
 - (instancetype)init {
     self = [super init]; self.reports = [NSMutableArray new];
     self.ended = [NSMutableArray new]; self.transactions = [NSMutableArray new]; return self;
@@ -147,6 +174,7 @@ NSString *PENDING_RESPONSE_ANSWER = @"pendingResponseAnswer";
     }
 }
 @end
+@compatibility_alias CXProvider FakeCallKit;
 
 @interface FakeDelegate : NSObject
 @property NSMutableDictionary<NSString *, CDVPluginResult *> *results;
@@ -177,6 +205,8 @@ typedef NSString *PKPushType;
 @property CXCall *observedCall;
 - (void)logMessage:(NSString *)message;
 - (void)stopKeepAlive:(CDVInvokedUrlCommand *)command;
+- (void)teardownAudioSession;
+- (NSString *)sessionIdForUUID:(NSUUID *)uuid;
 - (CXCall *)callForSessionId:(NSString *)sessionId;
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId;
 - (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId;
@@ -190,6 +220,13 @@ typedef NSString *PKPushType;
 }
 - (void)logMessage:(NSString *)message {}
 - (void)stopKeepAlive:(CDVInvokedUrlCommand *)command {}
+- (void)teardownAudioSession {}
+- (NSString *)sessionIdForUUID:(NSUUID *)uuid {
+    for (NSString *sessionId in self.activeCalls) {
+        if ([self.activeCalls[sessionId][@"callUUID"] isEqual:uuid]) return sessionId;
+    }
+    return nil;
+}
 - (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId {}
 - (CXCall *)callForSessionId:(NSString *)sessionId { return self.observedCall; }
 """
@@ -201,6 +238,11 @@ static void check(BOOL condition, NSString *message) {
 static void answer(CordovaCall *plugin, NSString *callbackId) {
     [plugin answerCall:[[CDVInvokedUrlCommand alloc]
         initWithArguments:@[@"session", @"Caller", @"123", [NSNull null]]
+        callbackId:callbackId className:@"" methodName:@""]];
+}
+static void receive(CordovaCall *plugin, NSString *callbackId) {
+    [plugin receiveCall:[[CDVInvokedUrlCommand alloc]
+        initWithArguments:@[@"Caller", @"123", @"session"]
         callbackId:callbackId className:@"" methodName:@""]];
 }
 static PKPushPayload *push(void) {
@@ -260,6 +302,102 @@ int main(int argc, const char *argv[]) {
             check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_ERROR, @"report failure rejects");
             check(p.provider.transactions.count == 0, @"no answer after failed report");
             check(!p.activeCalls[@"session"], @"failed report removed");
+        } else if ([scenario isEqual:@"receive-canceled-report-failure"]) {
+            receive(p, @"receive");
+            [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                callbackId:@"end" className:@"" methodName:@""]];
+            p.provider.reportCompletion([NSError errorWithDomain:@"test" code:1 userInfo:nil]);
+            check([p.commandDelegate.results[@"receive"] status] == CDVCommandStatus_ERROR, @"original receive rejects");
+            check(!p.activeCalls[@"session"], @"shared helper removes failed initial report");
+            check([p.endedSessionIds containsObject:@"session"], @"preserve ended marker");
+            receive(p, @"new-receive");
+            check(![p.endedSessionIds containsObject:@"session"], @"explicit receive clears marker");
+            p.provider.reportCompletion(nil);
+            check([p.commandDelegate.results[@"new-receive"] status] == CDVCommandStatus_OK, @"new receive resolves");
+            check([p.activeCalls[@"session"][@"reportSucceeded"] boolValue], @"new call stays registered");
+            check(p.provider.ended.count == 0, @"new call is not canceled by old pendingEnd");
+        } else if ([scenario isEqual:@"duplicate-report-failure"]) {
+            answer(p, @"first"); p.provider.reportCompletion(nil);
+            NSMutableDictionary *entry = p.activeCalls[@"session"];
+            receive(p, @"duplicate");
+            p.provider.reportCompletion([NSError errorWithDomain:@"test" code:3 userInfo:nil]);
+            check([p.commandDelegate.results[@"duplicate"] status] == CDVCommandStatus_ERROR, @"duplicate report rejects");
+            check(p.activeCalls[@"session"] == entry, @"registered entry preserved");
+            check(!p.commandDelegate.results[@"first"], @"valid answer waiter is not rejected");
+            CXAnswerCallAction *action = [p.provider.transactions[0] action];
+            [entry[@"pendingActivateAudioSessionEmits"]
+                addObject:@{@"uuid": action.UUID.UUIDString, @"type": @"answer"}];
+            [p processPendingActivateEmitsSkippingTypes:[NSSet setWithObject:@"sendCall"]
+                source:@"didActivateAudioSession"];
+            check([p.commandDelegate.results[@"first"] status] == CDVCommandStatus_OK, @"answer resolves on activation");
+        } else if ([scenario isEqual:@"replacement-report-completion"]) {
+            for (NSNumber *failed in @[@YES, @NO]) {
+                for (NSNumber *fromAnswer in @[@YES, @NO]) {
+                    p = [CordovaCall new];
+                    if (fromAnswer.boolValue) answer(p, @"old");
+                    else receive(p, @"old");
+                    void (^oldCompletion)(NSError *) = p.provider.reportCompletion;
+                    [p _removeEndedCallForSessionId:@"session"];
+                    receive(p, @"replacement");
+                    NSMutableDictionary *replacement = p.activeCalls[@"session"];
+                    answer(p, @"replacement-answer");
+                    oldCompletion(failed.boolValue ? [NSError errorWithDomain:@"test" code:1 userInfo:nil] : nil);
+                    check(p.activeCalls[@"session"] == replacement, @"old completion cannot remove replacement");
+                    check([replacement[@"reportInFlight"] boolValue], @"replacement report still in flight");
+                    check(![replacement[@"reportSucceeded"] boolValue], @"old success cannot register replacement");
+                    check(!p.commandDelegate.results[@"replacement-answer"], @"replacement answer still pending");
+                    check(!p.commandDelegate.results[@"replacement"], @"replacement receive still pending");
+                    if (!fromAnswer.boolValue) {
+                        check([p.commandDelegate.results[@"old"] status] ==
+                            (failed.boolValue ? CDVCommandStatus_ERROR : CDVCommandStatus_OK), @"old report callback settles");
+                    }
+                    p.provider.reportCompletion(nil);
+                    check(p.provider.transactions.count == 1, @"replacement answers after its own report");
+                }
+            }
+        } else if ([scenario isEqual:@"connected-end-during-report"] ||
+                   [scenario isEqual:@"ui-hangup-blocks-answer"]) {
+            for (NSNumber *reportFirst in @[@YES, @NO]) {
+                p = [CordovaCall new];
+                callbackIds[@"hangup"] = [NSMutableArray arrayWithObject:@"hangup"];
+                receive(p, @"receive");
+                NSMutableDictionary *entry = p.activeCalls[@"session"];
+                p.observedCall = [CXCall new];
+                p.observedCall.UUID = entry[@"callUUID"];
+                p.observedCall.hasConnected = YES;
+                entry[@"answerActivationCompleted"] = @YES;
+                BOOL programmatic = [scenario isEqual:@"connected-end-during-report"];
+                CXEndCallAction *action;
+                if (programmatic) {
+                    [p endCall:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"session"]
+                        callbackId:@"end" className:@"" methodName:@""]];
+                    check(p.provider.transactions.count == 1, @"connected end uses normal transaction");
+                    check(!p.commandDelegate.results[@"end"], @"end waits for deactivation");
+                    action = (id)[p.provider.transactions.lastObject action];
+                } else {
+                    action = [[CXEndCallAction alloc] initWithCallUUID:entry[@"callUUID"]];
+                }
+                [p provider:p.provider performEndCallAction:action];
+                p.observedCall = nil;
+                answer(p, @"late");
+                check([p.commandDelegate.results[@"late"] status] == CDVCommandStatus_ERROR, @"queued hangup rejects answer");
+                check([[p.commandDelegate.results[@"late"] value][@"callEnded"] boolValue], @"queued hangup returns ended");
+                if (reportFirst.boolValue) {
+                    p.provider.reportCompletion(nil);
+                    check(p.activeCalls[@"session"] == entry, @"report completion preserves queued hangup");
+                    check(!p.commandDelegate.results[@"hangup"], @"hangup waits for deactivation");
+                }
+                [p provider:p.provider didDeactivateAudioSession:nil];
+                check([p.commandDelegate.results[@"hangup"] status] == CDVCommandStatus_OK, @"hangup emitted after deactivation");
+                if (programmatic) {
+                    check([p.commandDelegate.results[@"end"] status] == CDVCommandStatus_OK, @"end resolves after deactivation");
+                }
+                check(!p.activeCalls[@"session"], @"deactivation removes ended call");
+                if (!reportFirst.boolValue) p.provider.reportCompletion(nil);
+                check(!p.activeCalls[@"session"], @"late report cannot recreate ended call");
+                check([p.commandDelegate.results[@"receive"] status] == CDVCommandStatus_OK, @"receive callback settles");
+                check(p.provider.ended.count == 0, @"normal end action owns connected teardown");
+            }
         } else if ([scenario isEqual:@"transaction-failure"]) {
             p.provider.transactionError = [NSError errorWithDomain:@"test" code:2 userInfo:nil];
             answer(p, @"first"); p.provider.reportCompletion(nil);
@@ -473,6 +611,8 @@ METHODS = [
     "endCall:",
     "rejectPendingCommandsForSessionId:",
     "processPendingActivateEmitsSkippingTypes:",
+    "performEndCallAction:",
+    "didDeactivateAudioSession:",
     "resolveCommandForSessionId:",
     "_removeEndedCallForSessionId:",
     "_dismissRingingCall:",
@@ -512,6 +652,21 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_report_failure(self):
         self.run_scenario("report-failure")
+
+    def test_receive_canceled_report_failure(self):
+        self.run_scenario("receive-canceled-report-failure")
+
+    def test_duplicate_report_failure(self):
+        self.run_scenario("duplicate-report-failure")
+
+    def test_replacement_report_completion(self):
+        self.run_scenario("replacement-report-completion")
+
+    def test_connected_end_during_report(self):
+        self.run_scenario("connected-end-during-report")
+
+    def test_ui_hangup_blocks_answer(self):
+        self.run_scenario("ui-hangup-blocks-answer")
 
     def test_transaction_failure(self):
         self.run_scenario("transaction-failure")
