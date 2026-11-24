@@ -34,6 +34,8 @@ If you need more parameters, just add them into the structure to your liking. Ba
 
 You guys might be wondering, so far it is all about iOS, how about Android? As for Android, no modifications are required for the original plugin since background notifications can handle everything.
 
+On iOS, if the user declines before JavaScript registers a `reject` listener, the event is replayed on registration with the original call payload.
+
 # iOS: answering outside the CallKit UI
 
 When the user answers from somewhere other than the CallKit UI (e.g. an in-app button or a Live Activity), call

@@ -768,7 +768,7 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
         // Gets all of the pending reject call responses, actions on each one and then deletes them all from pendingCallResponses
         NSArray *rejects = [pendingCallResponses filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", PENDING_RESPONSE_REJECT]];
         for (NSDictionary *reject in rejects) {
-            [self triggerCordovaEventForCallResponse:@"reject" sessionId:reject[@"sessionId"]];
+            [self sendCordovaEventForCallResponse:@"reject" callData:reject[@"callData"]];
         }
         [pendingCallResponses removeObjectsInArray:rejects];
     }
@@ -1481,11 +1481,12 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
             }
         } else {
             if ([callbackIds[@"reject"] count] == 0) {
-                // callbackId for event not registered, add to pending to trigger on registration
-                NSDictionary *pendingResponse = @{
+                // Snapshot the payload before teardown removes the active call.
+                NSMutableDictionary *pendingResponse = [@{
                     @"type": PENDING_RESPONSE_REJECT,
                     @"sessionId": sessionId
-                };
+                } mutableCopy];
+                pendingResponse[@"callData"] = [self.activeCalls[sessionId][@"callData"] copy];
                 [pendingCallResponses addObject:pendingResponse];
             } else {
                 [self triggerCordovaEventForCallResponse:@"reject" sessionId:sessionId];
@@ -1514,9 +1515,13 @@ NSString* const KEY_VOIP_PUSH_TOKEN = @"PK_deviceToken";
 }
 
 - (void)triggerCordovaEventForCallResponse:(NSString*) response sessionId:(NSString*)sessionId {
+    [self sendCordovaEventForCallResponse:response callData:self.activeCalls[sessionId][@"callData"]];
+}
+
+- (void)sendCordovaEventForCallResponse:(NSString *)response callData:(NSString *)callData {
     if ([@[@"answer", @"reject"] containsObject:response]) {
         for (id callbackId in callbackIds[response]) {
-            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:self.activeCalls[sessionId][@"callData"]];
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:callData];
             [pluginResult setKeepCallbackAsBool:YES];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
         }

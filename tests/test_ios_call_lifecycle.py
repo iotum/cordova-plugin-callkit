@@ -226,6 +226,7 @@ typedef NSString *PKPushType;
 - (CXCall *)callForSessionId:(NSString *)sessionId;
 - (void)rejectPendingCommandsForSessionId:(NSString *)sessionId;
 - (void)triggerCordovaEventForCallResponse:(NSString *)type sessionId:(NSString *)sessionId;
+- (void)sendCordovaEventForCallResponse:(NSString *)type callData:(NSString *)callData;
 @end
 @implementation CordovaCall
 - (instancetype)init {
@@ -785,6 +786,30 @@ int main(int argc, const char *argv[]) {
             check(!p.commandDelegate.results[@"send"], @"outgoing command remains pending");
             [p resolveCommandForSessionId:@"session" actionUUIDString:action.UUID.UUIDString];
             check([p.commandDelegate.results[@"send"] status] == CDVCommandStatus_OK, @"outgoing command still resolves");
+        } else if ([scenario isEqual:@"reject-before-listener"]) {
+            PKPushPayload *payload = [PKPushPayload new];
+            NSString *original = @"{\"session_id\":\"session\", \"from\":\"Caller\", \"cid\":\"123\", "
+                                 @"\"extra\":{\"tags\":[\"one\",\"two\"]}}";
+            payload.dictionaryPayload = @{@"data": @{@"payload": original}};
+            [p pushRegistry:nil didReceiveIncomingPushWithPayload:payload forType:nil
+                withCompletionHandler:^{}];
+            p.provider.reportCompletion(nil);
+            p.observedCall = [CXCall new];
+            p.observedCall.UUID = p.activeCalls[@"session"][@"callUUID"];
+            callbackIds[@"reject"] = [NSMutableArray new];
+            CXEndCallAction *action = [[CXEndCallAction alloc] initWithCallUUID:p.observedCall.UUID];
+            [p provider:p.provider performEndCallAction:action];
+            check(!p.activeCalls[@"session"], @"decline removes the active call before registration");
+
+            [p registerEvent:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"reject"]
+                callbackId:@"reject-listener" className:@"" methodName:@""]];
+            CDVPluginResult *result = p.commandDelegate.results[@"reject-listener"];
+            check(result.status == CDVCommandStatus_OK && [result.value isEqual:original],
+                @"late listener receives the full original JSON string");
+
+            [p registerEvent:[[CDVInvokedUrlCommand alloc] initWithArguments:@[@"reject"]
+                callbackId:@"second-listener" className:@"" methodName:@""]];
+            check(!p.commandDelegate.results[@"second-listener"], @"queued reject is only replayed once");
         } else if ([scenario isEqual:@"activated-end-observer-lag"]) {
             for (NSNumber *observed in @[@YES, @NO]) {
                 for (NSNumber *otherActive in @[@YES, @NO]) {
@@ -1026,6 +1051,7 @@ METHODS = [
     "_settleAnswerWaitersForSessionId:",
     "sendCall:",
     "endCall:",
+    "registerEvent:",
     "rejectPendingCommandsForSessionId:",
     "processPendingActivateEmitsSkippingTypes:",
     "performAnswerCallAction:",
@@ -1033,6 +1059,7 @@ METHODS = [
     "didActivateAudioSession:",
     "didDeactivateAudioSession:",
     "triggerCordovaEventForCallResponse:",
+    "sendCordovaEventForCallResponse:",
     "resolveCommandForSessionId:",
     "_removeEndedCallForSessionId:",
     "_dismissRingingCall:",
@@ -1093,6 +1120,9 @@ class IOSCallLifecycleTests(unittest.TestCase):
 
     def test_ui_hangup_blocks_answer(self):
         self.run_scenario("ui-hangup-blocks-answer")
+
+    def test_reject_before_listener(self):
+        self.run_scenario("reject-before-listener")
 
     def test_transaction_failure(self):
         self.run_scenario("transaction-failure")
