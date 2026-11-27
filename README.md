@@ -34,6 +34,34 @@ If you need more parameters, just add them into the structure to your liking. Ba
 
 You guys might be wondering, so far it is all about iOS, how about Android? As for Android, no modifications are required for the original plugin since background notifications can handle everything.
 
+# iOS: answering outside the CallKit UI
+
+When the user answers from somewhere other than the CallKit UI (e.g. an in-app button or a Live Activity), call
+`CordovaCall.answerCall(sessionId, from, id, callData, success, error)` before creating the call's media. It reports
+the call to CallKit if needed, then requests a `CXAnswerCallAction`, so CallKit activates the audio session (WebRTC
+audio stays disabled until `didActivateAudioSession`). `success` fires once the audio session is active for the
+answered call; create media then. Do not wait for WebRTC's `audioSessionDidStartPlayOrRecord`, which only fires once a
+peer connection exists. A programmatic answer does not emit the `answer` event.
+Once an incoming-call report succeeds, answers reuse its UUID even if CallKit's call observer has not updated yet.
+Concurrent incoming-call reports for the same session share one CallKit report and receive its completion result.
+If a CallKit UI answer is already awaiting audio activation, `answerCall` waits for it instead of submitting another answer.
+This also applies when the UI answer arrives while a programmatic answer transaction is awaiting its result.
+Ending a session before it has been reported blocks stale answers and delayed pushes until an explicit new
+`receiveCall` or outgoing call reuses that session.
+After answer activation, ending the call follows the normal `hangup`/audio-deactivation path even if the observer
+still lacks the call or reports it as unconnected.
+If overlapping end requests occur, one rejected request does not allow answers while another end request or
+queued hangup remains pending.
+Delayed VoIP pushes for ended sessions are discarded without ringing or forwarding their stale payload to JavaScript.
+They report and immediately end a dummy call to satisfy PushKit's incoming-call reporting requirement.
+
+# Lifecycle regression tests
+
+On macOS with Xcode command-line tools, run `python3 tests/test_ios_call_lifecycle.py -v`.
+The tests compile the plugin's lifecycle methods against deterministic CallKit/PushKit doubles using Foundation.
+They invoke the answer handler with audio active and inactive, checking callback timing and programmatic-event suppression.
+They do not replace device testing of CallKit audio activation and push delivery.
+
 # Conclusion
 
 I hope that this plugin will help other people out there who is struggling to figure this portion out. Again, I wanted to thank the original creators of these plugins. Without them, I couldn't figure out on how to do all this. If there's any questions, feel free to contact me. I'll try my best to help.

@@ -162,6 +162,19 @@ exports.setupAudioSession = function (success, error) {
   exec(success, error, "CordovaCall", "setupAudioSession", []);
 }
 
+/**
+ * Answers an incoming call through CallKit (CXAnswerCallAction), reporting it as a new incoming call first if
+ * CallKit does not know it. Succeeds once CallKit activated the audio session for the answered call, so the
+ * call's media should be created only after that.
+ * @param {string} sessionId The session id that identifies the call
+ * @param {string=} from The caller's name, used if the call must be reported
+ * @param {string=} id The caller's identifier (e.g. phone number), used if the call must be reported
+ * @param {string=} callData JSON payload of the answer/reject events, if CallKit does not have one for the call
+ */
+exports.answerCall = function (sessionId, from, id, callData, success, error) {
+  exec(success, error, "CordovaCall", "answerCall", [sessionId, from || null, id ? id.toString() : null, callData || null]);
+}
+
 exports.setAllowUnmute = function (sessionId, value, success, error) {
   if (typeof value == "boolean") {
     exec(success, error, "CordovaCall", "setAllowUnmute", [sessionId, value]);
