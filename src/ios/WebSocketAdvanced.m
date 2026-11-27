@@ -1,4 +1,6 @@
-#import <Cordova/CDV.h>
+#import <Cordova/Cordova.h>
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import "WebSocketAdvanced.h"
 
 @implementation WebSocketAdvanced

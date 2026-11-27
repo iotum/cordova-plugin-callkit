@@ -1,9 +1,11 @@
-#import "AppDelegate.h"
+#import <Cordova/CDVAppDelegate.h>
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import "Intents/Intents.h"
 #import <CallKit/CallKit.h>
 #import <objc/runtime.h>
 
-@implementation AppDelegate (CordovaCall)
+@implementation CDVAppDelegate (CordovaCall)
 
 // Comment out the following as it's overriding continueUserActivity in the Branch plugin
 // Have to implement swizzle via cordova-plugin-ios-app-delegate-events but Branch's plugin has a custom declaration of continueUserActivity that gets called when not intended.
